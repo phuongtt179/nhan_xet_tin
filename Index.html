@@ -1,0 +1,1163 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Quản lý lớp học</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <?!= HtmlService.createHtmlOutputFromFile('Stylesheet').getContent(); ?>
+</head>
+<body class="bg-gray-50">
+
+  <!-- Loading Overlay -->
+  <div id="loadingOverlay" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+    <div class="bg-white p-6 rounded-lg shadow-xl">
+      <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
+      <p class="mt-4 text-gray-700">Đang xử lý...</p>
+    </div>
+  </div>
+
+  <div class="flex h-screen overflow-hidden">
+
+    <!-- Sidebar -->
+    <div class="w-64 bg-gradient-to-b from-blue-600 to-blue-800 text-white flex-shrink-0">
+      <div class="p-6">
+        <h1 class="text-2xl font-bold flex items-center">
+          <i class="fas fa-graduation-cap mr-2"></i>
+          Quản lý lớp
+        </h1>
+        <p class="text-blue-200 text-sm mt-1">Hệ thống điểm danh</p>
+      </div>
+
+      <nav class="mt-6 flex flex-col gap-1">
+        <a href="#" onclick="showPage('dashboard'); return false;" class="nav-item active text-base" data-page="dashboard">
+          <i class="fas fa-home w-5"></i>
+          <span>Tổng quan</span>
+        </a>
+        <a href="#" onclick="showPage('classes'); return false;" class="nav-item text-base" data-page="classes">
+          <i class="fas fa-chalkboard w-5"></i>
+          <span>Lớp học</span>
+        </a>
+        <a href="#" onclick="showPage('students'); return false;" class="nav-item text-base" data-page="students">
+          <i class="fas fa-user-graduate w-5"></i>
+          <span>Học sinh</span>
+        </a>
+        <a href="#" onclick="showPage('attendance'); return false;" class="nav-item text-base" data-page="attendance">
+          <i class="fas fa-clipboard-check w-5"></i>
+          <span>Điểm danh</span>
+        </a>
+        <a href="#" onclick="showPage('payments'); return false;" class="nav-item text-base" data-page="payments">
+          <i class="fas fa-money-bill-wave w-5"></i>
+          <span>Học phí</span>
+        </a>
+      </nav>
+
+      <div class="absolute bottom-0 w-64 p-6 border-t border-blue-700">
+        <button onclick="openGoogleSheet()" class="w-full bg-blue-500 hover:bg-blue-400 text-white py-2 px-4 rounded-lg text-sm flex items-center justify-center">
+          <i class="fas fa-table mr-2"></i>
+          Mở Google Sheet
+        </button>
+      </div>
+    </div>
+
+    <!-- Main Content -->
+    <div class="flex-1 overflow-y-auto">
+      <div class="p-8">
+
+        <!-- Dashboard Page -->
+        <div id="page-dashboard" class="page-content">
+          <h2 class="text-3xl font-bold text-gray-800 mb-6">Tổng quan</h2>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+            <div class="bg-white rounded-xl shadow-md p-6 border-l-4 border-blue-500">
+              <div class="flex items-center justify-between">
+                <div>
+                  <p class="text-gray-500 text-sm">Tổng lớp học</p>
+                  <p class="text-3xl font-bold text-gray-800 mt-1" id="stat-classes">0</p>
+                </div>
+                <div class="bg-blue-100 p-4 rounded-full">
+                  <i class="fas fa-chalkboard text-blue-600 text-2xl"></i>
+                </div>
+              </div>
+            </div>
+
+            <div class="bg-white rounded-xl shadow-md p-6 border-l-4 border-green-500">
+              <div class="flex items-center justify-between">
+                <div>
+                  <p class="text-gray-500 text-sm">Tổng học sinh</p>
+                  <p class="text-3xl font-bold text-gray-800 mt-1" id="stat-students">0</p>
+                </div>
+                <div class="bg-green-100 p-4 rounded-full">
+                  <i class="fas fa-user-graduate text-green-600 text-2xl"></i>
+                </div>
+              </div>
+            </div>
+
+            <div class="bg-white rounded-xl shadow-md p-6 border-l-4 border-yellow-500">
+              <div class="flex items-center justify-between">
+                <div>
+                  <p class="text-gray-500 text-sm">Điểm danh hôm nay</p>
+                  <p class="text-3xl font-bold text-gray-800 mt-1" id="stat-attendance">0</p>
+                </div>
+                <div class="bg-yellow-100 p-4 rounded-full">
+                  <i class="fas fa-clipboard-check text-yellow-600 text-2xl"></i>
+                </div>
+              </div>
+            </div>
+
+            <div class="bg-white rounded-xl shadow-md p-6 border-l-4 border-red-500">
+              <div class="flex items-center justify-between">
+                <div>
+                  <p class="text-gray-500 text-sm">Chưa đóng học phí</p>
+                  <p class="text-3xl font-bold text-gray-800 mt-1" id="stat-unpaid">0</p>
+                </div>
+                <div class="bg-red-100 p-4 rounded-full">
+                  <i class="fas fa-money-bill-wave text-red-600 text-2xl"></i>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="bg-white rounded-xl shadow-md p-6">
+            <h3 class="text-xl font-bold text-gray-800 mb-4">Hướng dẫn sử dụng</h3>
+            <div class="space-y-3 text-gray-600">
+              <div class="flex items-start">
+                <i class="fas fa-circle text-blue-500 text-xs mt-1.5 mr-3"></i>
+                <p><strong>Lớp học:</strong> Thêm và quản lý các lớp dạy thêm của bạn</p>
+              </div>
+              <div class="flex items-start">
+                <i class="fas fa-circle text-blue-500 text-xs mt-1.5 mr-3"></i>
+                <p><strong>Học sinh:</strong> Quản lý thông tin học sinh từng lớp</p>
+              </div>
+              <div class="flex items-start">
+                <i class="fas fa-circle text-blue-500 text-xs mt-1.5 mr-3"></i>
+                <p><strong>Điểm danh:</strong> Điểm danh nhanh theo từng buổi học</p>
+              </div>
+              <div class="flex items-start">
+                <i class="fas fa-circle text-blue-500 text-xs mt-1.5 mr-3"></i>
+                <p><strong>Học phí:</strong> Theo dõi học phí đã đóng/chưa đóng</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Classes Page -->
+        <div id="page-classes" class="page-content hidden">
+          <div class="flex justify-between items-center mb-6">
+            <h2 class="text-3xl font-bold text-gray-800">Quản lý lớp học</h2>
+            <button onclick="showAddClassModal()" class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg font-semibold flex items-center shadow-lg">
+              <i class="fas fa-plus mr-2"></i>
+              Thêm lớp học
+            </button>
+          </div>
+
+          <div id="classes-list" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            <!-- Classes will be loaded here -->
+          </div>
+        </div>
+
+        <!-- Students Page -->
+        <div id="page-students" class="page-content hidden">
+          <div class="flex justify-between items-center mb-6">
+            <h2 class="text-3xl font-bold text-gray-800">Quản lý học sinh</h2>
+            <button onclick="showAddStudentModal()" class="bg-green-600 hover:bg-green-700 text-white px-6 py-3 rounded-lg font-semibold flex items-center shadow-lg">
+              <i class="fas fa-plus mr-2"></i>
+              Thêm học sinh
+            </button>
+          </div>
+
+          <div class="bg-white rounded-xl shadow-md p-4 mb-6">
+            <label class="block text-sm font-semibold text-gray-700 mb-2">Lọc theo lớp:</label>
+            <select id="filter-class" onchange="loadStudents()" class="w-full md:w-64 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500">
+              <option value="">Tất cả lớp</option>
+            </select>
+          </div>
+
+          <div id="students-list" class="bg-white rounded-xl shadow-md overflow-hidden">
+            <!-- Students will be loaded here -->
+          </div>
+        </div>
+
+        <!-- Attendance Page -->
+        <div id="page-attendance" class="page-content hidden">
+          <h2 class="text-3xl font-bold text-gray-800 mb-6">Điểm danh</h2>
+
+          <div class="bg-white rounded-xl shadow-md p-6 mb-6">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label class="block text-sm font-semibold text-gray-700 mb-2">Chọn lớp:</label>
+                <select id="attendance-class" onchange="loadAttendanceStudents()" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-yellow-500">
+                  <option value="">-- Chọn lớp --</option>
+                </select>
+              </div>
+              <div>
+                <label class="block text-sm font-semibold text-gray-700 mb-2">Ngày:</label>
+                <input type="date" id="attendance-date" onchange="loadAttendanceStudents()" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-yellow-500">
+              </div>
+            </div>
+          </div>
+
+          <div id="attendance-list" class="bg-white rounded-xl shadow-md overflow-hidden">
+            <p class="text-gray-500 text-center py-8">Vui lòng chọn lớp và ngày để điểm danh</p>
+          </div>
+
+          <div id="attendance-actions" class="hidden mt-6 flex justify-end">
+            <button onclick="saveAllAttendance()" class="bg-yellow-600 hover:bg-yellow-700 text-white px-8 py-3 rounded-lg font-semibold shadow-lg">
+              <i class="fas fa-save mr-2"></i>
+              Lưu điểm danh
+            </button>
+          </div>
+        </div>
+
+        <!-- Payments Page -->
+        <div id="page-payments" class="page-content hidden">
+          <h2 class="text-3xl font-bold text-gray-800 mb-6">Quản lý học phí</h2>
+
+          <div class="bg-white rounded-xl shadow-md p-6 mb-6">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label class="block text-sm font-semibold text-gray-700 mb-2">Chọn lớp:</label>
+                <select id="payment-class" onchange="loadPayments()" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500">
+                  <option value="">-- Chọn lớp --</option>
+                </select>
+              </div>
+              <div>
+                <label class="block text-sm font-semibold text-gray-700 mb-2">Tháng:</label>
+                <input type="month" id="payment-month" onchange="loadPayments()" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500">
+              </div>
+            </div>
+          </div>
+
+          <div id="payments-list" class="bg-white rounded-xl shadow-md overflow-hidden">
+            <p class="text-gray-500 text-center py-8">Vui lòng chọn lớp và tháng</p>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- Modals will be added here -->
+  <div id="modals-container"></div>
+
+  <script>
+// ==================== GLOBAL VARIABLES ====================
+let allClasses = [];
+let allStudents = [];
+let currentAttendanceData = {};
+
+// ==================== INITIALIZATION ====================
+window.onload = function() {
+  // Set today's date
+  const today = new Date().toISOString().split('T')[0];
+  document.getElementById('attendance-date').value = today;
+
+  // Set current month
+  const currentMonth = new Date().toISOString().slice(0, 7);
+  document.getElementById('payment-month').value = currentMonth;
+
+  // Load initial data
+  loadDashboard();
+  loadClassesDropdowns();
+};
+
+// ==================== NAVIGATION ====================
+function showPage(pageName) {
+  // Hide all pages
+  document.querySelectorAll('.page-content').forEach(page => {
+    page.classList.add('hidden');
+  });
+
+  // Show selected page
+  document.getElementById(`page-${pageName}`).classList.remove('hidden');
+
+  // Update navigation
+  document.querySelectorAll('.nav-item').forEach(item => {
+    item.classList.remove('active');
+  });
+  document.querySelector(`[data-page="${pageName}"]`).classList.add('active');
+
+  // Load page data
+  switch(pageName) {
+    case 'dashboard':
+      loadDashboard();
+      break;
+    case 'classes':
+      loadClasses();
+      break;
+    case 'students':
+      loadStudents();
+      break;
+    case 'attendance':
+      loadClassesDropdowns();
+      break;
+    case 'payments':
+      loadClassesDropdowns();
+      break;
+  }
+}
+
+// ==================== LOADING ====================
+function showLoading() {
+  document.getElementById('loadingOverlay').classList.remove('hidden');
+}
+
+function hideLoading() {
+  document.getElementById('loadingOverlay').classList.add('hidden');
+}
+
+// ==================== DASHBOARD ====================
+function loadDashboard() {
+  showLoading();
+
+  google.script.run
+    .withSuccessHandler(function(classes) {
+      allClasses = classes;
+      document.getElementById('stat-classes').textContent = classes.length;
+
+      // Load students
+      google.script.run
+        .withSuccessHandler(function(students) {
+          allStudents = students;
+          document.getElementById('stat-students').textContent = students.length;
+
+          // Load today's attendance
+          const today = new Date().toISOString().split('T')[0];
+          let attendanceCount = 0;
+
+          classes.forEach(cls => {
+            google.script.run
+              .withSuccessHandler(function(attendance) {
+                attendanceCount += attendance.length;
+                document.getElementById('stat-attendance').textContent = attendanceCount;
+              })
+              .getAttendance(cls.id, today);
+          });
+
+          // Load unpaid payments
+          const currentMonth = new Date().toISOString().slice(0, 7);
+          google.script.run
+            .withSuccessHandler(function(payments) {
+              const unpaid = payments.filter(p => p.status === 'Chưa đóng').length;
+              document.getElementById('stat-unpaid').textContent = unpaid;
+              hideLoading();
+            })
+            .getPayments(null, currentMonth);
+        })
+        .getStudents();
+    })
+    .withFailureHandler(function(error) {
+      hideLoading();
+      alert('Lỗi: ' + error.message);
+    })
+    .getClasses();
+}
+
+// ==================== CLASSES ====================
+function loadClasses() {
+  showLoading();
+
+  google.script.run
+    .withSuccessHandler(function(classes) {
+      allClasses = classes;
+      displayClasses(classes);
+      hideLoading();
+    })
+    .withFailureHandler(function(error) {
+      hideLoading();
+      alert('Lỗi: ' + error.message);
+    })
+    .getClasses();
+}
+
+function displayClasses(classes) {
+  const container = document.getElementById('classes-list');
+
+  if (classes.length === 0) {
+    container.innerHTML = `
+      <div class="col-span-full text-center py-12">
+        <i class="fas fa-chalkboard text-gray-300 text-6xl mb-4"></i>
+        <p class="text-gray-500 text-lg">Chưa có lớp học nào</p>
+        <p class="text-gray-400 mt-2">Nhấn "Thêm lớp học" để bắt đầu</p>
+      </div>
+    `;
+    return;
+  }
+
+  container.innerHTML = classes.map(cls => `
+    <div class="class-card">
+      <div class="flex justify-between items-start mb-4">
+        <h3 class="text-xl font-bold text-gray-800">${cls.name}</h3>
+        <div class="flex gap-2">
+          <button onclick="editClass('${cls.id}')" class="text-blue-600 hover:text-blue-800">
+            <i class="fas fa-edit"></i>
+          </button>
+          <button onclick="deleteClassConfirm('${cls.id}')" class="text-red-600 hover:text-red-800">
+            <i class="fas fa-trash"></i>
+          </button>
+        </div>
+      </div>
+      <div class="space-y-2 text-gray-600">
+        <p><i class="fas fa-book w-5"></i> ${cls.subject}</p>
+        <p><i class="fas fa-calendar w-5"></i> ${cls.schedule}</p>
+        <p><i class="fas fa-money-bill-wave w-5"></i> ${formatCurrency(cls.tuition)}/tháng</p>
+      </div>
+    </div>
+  `).join('');
+}
+
+function showAddClassModal() {
+  const modal = createModal('Thêm lớp học mới', `
+    <form id="classForm" onsubmit="saveClass(event)">
+      <div class="space-y-4">
+        <div>
+          <label class="block text-sm font-semibold text-gray-700 mb-2">Tên lớp *</label>
+          <input type="text" name="name" required placeholder="VD: Toán 10A" class="w-full">
+        </div>
+        <div>
+          <label class="block text-sm font-semibold text-gray-700 mb-2">Môn học *</label>
+          <input type="text" name="subject" required placeholder="VD: Toán" class="w-full">
+        </div>
+        <div>
+          <label class="block text-sm font-semibold text-gray-700 mb-2">Lịch học *</label>
+          <input type="text" name="schedule" required placeholder="VD: T2, T4, T6 - 18:00" class="w-full">
+        </div>
+        <div>
+          <label class="block text-sm font-semibold text-gray-700 mb-2">Học phí/tháng (VNĐ) *</label>
+          <input type="number" name="tuition" required placeholder="VD: 500000" class="w-full">
+        </div>
+      </div>
+      <div class="flex justify-end gap-3 mt-6">
+        <button type="button" onclick="closeModal()" class="px-6 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300">
+          Hủy
+        </button>
+        <button type="submit" class="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+          Thêm lớp
+        </button>
+      </div>
+    </form>
+  `);
+
+  showModal(modal);
+}
+
+function editClass(classId) {
+  const cls = allClasses.find(c => c.id === classId);
+  if (!cls) return;
+
+  const modal = createModal('Chỉnh sửa lớp học', `
+    <form id="classForm" onsubmit="saveClass(event, '${classId}')">
+      <div class="space-y-4">
+        <div>
+          <label class="block text-sm font-semibold text-gray-700 mb-2">Tên lớp *</label>
+          <input type="text" name="name" required value="${cls.name}" class="w-full">
+        </div>
+        <div>
+          <label class="block text-sm font-semibold text-gray-700 mb-2">Môn học *</label>
+          <input type="text" name="subject" required value="${cls.subject}" class="w-full">
+        </div>
+        <div>
+          <label class="block text-sm font-semibold text-gray-700 mb-2">Lịch học *</label>
+          <input type="text" name="schedule" required value="${cls.schedule}" class="w-full">
+        </div>
+        <div>
+          <label class="block text-sm font-semibold text-gray-700 mb-2">Học phí/tháng (VNĐ) *</label>
+          <input type="number" name="tuition" required value="${cls.tuition}" class="w-full">
+        </div>
+      </div>
+      <div class="flex justify-end gap-3 mt-6">
+        <button type="button" onclick="closeModal()" class="px-6 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300">
+          Hủy
+        </button>
+        <button type="submit" class="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+          Cập nhật
+        </button>
+      </div>
+    </form>
+  `);
+
+  showModal(modal);
+}
+
+function saveClass(event, classId = null) {
+  event.preventDefault();
+  showLoading();
+
+  const form = event.target;
+  const formData = new FormData(form);
+  const data = {
+    name: formData.get('name'),
+    subject: formData.get('subject'),
+    schedule: formData.get('schedule'),
+    tuition: parseInt(formData.get('tuition'))
+  };
+
+  if (classId) {
+    data.id = classId;
+    google.script.run
+      .withSuccessHandler(function(result) {
+        hideLoading();
+        closeModal();
+        loadClasses();
+        alert('Cập nhật lớp học thành công!');
+      })
+      .withFailureHandler(function(error) {
+        hideLoading();
+        alert('Lỗi: ' + error.message);
+      })
+      .updateClass(data);
+  } else {
+    google.script.run
+      .withSuccessHandler(function(result) {
+        hideLoading();
+        closeModal();
+        loadClasses();
+        alert('Thêm lớp học thành công!');
+      })
+      .withFailureHandler(function(error) {
+        hideLoading();
+        alert('Lỗi: ' + error.message);
+      })
+      .addClass(data);
+  }
+}
+
+function deleteClassConfirm(classId) {
+  const cls = allClasses.find(c => c.id === classId);
+  if (!cls) return;
+
+  if (confirm(`Bạn có chắc muốn xóa lớp "${cls.name}"?\n\nLưu ý: Dữ liệu học sinh, điểm danh và học phí của lớp này sẽ KHÔNG bị xóa.`)) {
+    showLoading();
+    google.script.run
+      .withSuccessHandler(function(result) {
+        hideLoading();
+        loadClasses();
+        alert('Đã xóa lớp học!');
+      })
+      .withFailureHandler(function(error) {
+        hideLoading();
+        alert('Lỗi: ' + error.message);
+      })
+      .deleteClass(classId);
+  }
+}
+
+// ==================== STUDENTS ====================
+function loadStudents() {
+  showLoading();
+
+  const classId = document.getElementById('filter-class').value;
+
+  google.script.run
+    .withSuccessHandler(function(students) {
+      allStudents = students;
+      displayStudents(students);
+      hideLoading();
+    })
+    .withFailureHandler(function(error) {
+      hideLoading();
+      alert('Lỗi: ' + error.message);
+    })
+    .getStudents(classId || null);
+}
+
+function displayStudents(students) {
+  const container = document.getElementById('students-list');
+
+  if (students.length === 0) {
+    container.innerHTML = `
+      <div class="text-center py-12">
+        <i class="fas fa-user-graduate text-gray-300 text-6xl mb-4"></i>
+        <p class="text-gray-500 text-lg">Chưa có học sinh nào</p>
+      </div>
+    `;
+    return;
+  }
+
+  container.innerHTML = `
+    <table>
+      <thead>
+        <tr>
+          <th>Họ tên</th>
+          <th>SĐT học sinh</th>
+          <th>SĐT phụ huynh</th>
+          <th>Lớp</th>
+          <th>Ghi chú</th>
+          <th class="text-center">Thao tác</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${students.map(student => {
+          const cls = allClasses.find(c => c.id === student.classId);
+          return `
+            <tr>
+              <td class="font-semibold">${student.name}</td>
+              <td>${student.phone || '-'}</td>
+              <td>${student.parentPhone || '-'}</td>
+              <td><span class="badge badge-info">${cls ? cls.name : 'N/A'}</span></td>
+              <td class="text-gray-600 text-sm">${student.note || '-'}</td>
+              <td class="text-center">
+                <button onclick="editStudent('${student.id}')" class="text-blue-600 hover:text-blue-800 mr-3">
+                  <i class="fas fa-edit"></i>
+                </button>
+                <button onclick="deleteStudentConfirm('${student.id}')" class="text-red-600 hover:text-red-800">
+                  <i class="fas fa-trash"></i>
+                </button>
+              </td>
+            </tr>
+          `;
+        }).join('')}
+      </tbody>
+    </table>
+  `;
+}
+
+function showAddStudentModal() {
+  if (allClasses.length === 0) {
+    alert('Vui lòng tạo lớp học trước!');
+    return;
+  }
+
+  const modal = createModal('Thêm học sinh mới', `
+    <form id="studentForm" onsubmit="saveStudent(event)">
+      <div class="space-y-4">
+        <div>
+          <label class="block text-sm font-semibold text-gray-700 mb-2">Họ tên *</label>
+          <input type="text" name="name" required placeholder="VD: Nguyễn Văn A" class="w-full">
+        </div>
+        <div>
+          <label class="block text-sm font-semibold text-gray-700 mb-2">Lớp học *</label>
+          <select name="classId" required class="w-full">
+            <option value="">-- Chọn lớp --</option>
+            ${allClasses.map(cls => `<option value="${cls.id}">${cls.name}</option>`).join('')}
+          </select>
+        </div>
+        <div>
+          <label class="block text-sm font-semibold text-gray-700 mb-2">SĐT học sinh</label>
+          <input type="text" name="phone" placeholder="VD: 0912345678" class="w-full">
+        </div>
+        <div>
+          <label class="block text-sm font-semibold text-gray-700 mb-2">SĐT phụ huynh</label>
+          <input type="text" name="parentPhone" placeholder="VD: 0987654321" class="w-full">
+        </div>
+        <div>
+          <label class="block text-sm font-semibold text-gray-700 mb-2">Ghi chú</label>
+          <textarea name="note" rows="3" placeholder="Ghi chú thêm (nếu có)" class="w-full"></textarea>
+        </div>
+      </div>
+      <div class="flex justify-end gap-3 mt-6">
+        <button type="button" onclick="closeModal()" class="px-6 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300">
+          Hủy
+        </button>
+        <button type="submit" class="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700">
+          Thêm học sinh
+        </button>
+      </div>
+    </form>
+  `);
+
+  showModal(modal);
+}
+
+function editStudent(studentId) {
+  const student = allStudents.find(s => s.id === studentId);
+  if (!student) return;
+
+  const modal = createModal('Chỉnh sửa học sinh', `
+    <form id="studentForm" onsubmit="saveStudent(event, '${studentId}')">
+      <div class="space-y-4">
+        <div>
+          <label class="block text-sm font-semibold text-gray-700 mb-2">Họ tên *</label>
+          <input type="text" name="name" required value="${student.name}" class="w-full">
+        </div>
+        <div>
+          <label class="block text-sm font-semibold text-gray-700 mb-2">Lớp học *</label>
+          <select name="classId" required class="w-full">
+            ${allClasses.map(cls =>
+              `<option value="${cls.id}" ${cls.id === student.classId ? 'selected' : ''}>${cls.name}</option>`
+            ).join('')}
+          </select>
+        </div>
+        <div>
+          <label class="block text-sm font-semibold text-gray-700 mb-2">SĐT học sinh</label>
+          <input type="text" name="phone" value="${student.phone || ''}" class="w-full">
+        </div>
+        <div>
+          <label class="block text-sm font-semibold text-gray-700 mb-2">SĐT phụ huynh</label>
+          <input type="text" name="parentPhone" value="${student.parentPhone || ''}" class="w-full">
+        </div>
+        <div>
+          <label class="block text-sm font-semibold text-gray-700 mb-2">Ghi chú</label>
+          <textarea name="note" rows="3" class="w-full">${student.note || ''}</textarea>
+        </div>
+      </div>
+      <div class="flex justify-end gap-3 mt-6">
+        <button type="button" onclick="closeModal()" class="px-6 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300">
+          Hủy
+        </button>
+        <button type="submit" class="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700">
+          Cập nhật
+        </button>
+      </div>
+    </form>
+  `);
+
+  showModal(modal);
+}
+
+function saveStudent(event, studentId = null) {
+  event.preventDefault();
+  showLoading();
+
+  const form = event.target;
+  const formData = new FormData(form);
+  const data = {
+    name: formData.get('name'),
+    classId: formData.get('classId'),
+    phone: formData.get('phone'),
+    parentPhone: formData.get('parentPhone'),
+    note: formData.get('note')
+  };
+
+  if (studentId) {
+    data.id = studentId;
+    google.script.run
+      .withSuccessHandler(function(result) {
+        hideLoading();
+        closeModal();
+        loadStudents();
+        alert('Cập nhật học sinh thành công!');
+      })
+      .withFailureHandler(function(error) {
+        hideLoading();
+        alert('Lỗi: ' + error.message);
+      })
+      .updateStudent(data);
+  } else {
+    google.script.run
+      .withSuccessHandler(function(result) {
+        hideLoading();
+        closeModal();
+        loadStudents();
+        alert('Thêm học sinh thành công!');
+      })
+      .withFailureHandler(function(error) {
+        hideLoading();
+        alert('Lỗi: ' + error.message);
+      })
+      .addStudent(data);
+  }
+}
+
+function deleteStudentConfirm(studentId) {
+  const student = allStudents.find(s => s.id === studentId);
+  if (!student) return;
+
+  if (confirm(`Bạn có chắc muốn xóa học sinh "${student.name}"?`)) {
+    showLoading();
+    google.script.run
+      .withSuccessHandler(function(result) {
+        hideLoading();
+        loadStudents();
+        alert('Đã xóa học sinh!');
+      })
+      .withFailureHandler(function(error) {
+        hideLoading();
+        alert('Lỗi: ' + error.message);
+      })
+      .deleteStudent(studentId);
+  }
+}
+
+// ==================== ATTENDANCE ====================
+function loadAttendanceStudents() {
+  const classId = document.getElementById('attendance-class').value;
+  const date = document.getElementById('attendance-date').value;
+
+  if (!classId || !date) {
+    document.getElementById('attendance-list').innerHTML = '<p class="text-gray-500 text-center py-8">Vui lòng chọn lớp và ngày để điểm danh</p>';
+    document.getElementById('attendance-actions').classList.add('hidden');
+    return;
+  }
+
+  showLoading();
+
+  // Load students of class
+  google.script.run
+    .withSuccessHandler(function(students) {
+      if (students.length === 0) {
+        document.getElementById('attendance-list').innerHTML = '<p class="text-gray-500 text-center py-8">Lớp này chưa có học sinh</p>';
+        document.getElementById('attendance-actions').classList.add('hidden');
+        hideLoading();
+        return;
+      }
+
+      // Load existing attendance
+      google.script.run
+        .withSuccessHandler(function(attendance) {
+          displayAttendance(students, attendance, classId, date);
+          hideLoading();
+        })
+        .withFailureHandler(function(error) {
+          hideLoading();
+          alert('Lỗi: ' + error.message);
+        })
+        .getAttendance(classId, date);
+    })
+    .withFailureHandler(function(error) {
+      hideLoading();
+      alert('Lỗi: ' + error.message);
+    })
+    .getStudents(classId);
+}
+
+function displayAttendance(students, attendance, classId, date) {
+  currentAttendanceData = {};
+
+  const container = document.getElementById('attendance-list');
+  container.innerHTML = `
+    <table>
+      <thead>
+        <tr>
+          <th>STT</th>
+          <th>Họ tên</th>
+          <th>Trạng thái</th>
+          <th>Ghi chú</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${students.map((student, index) => {
+          const existingAttendance = attendance.find(a => a.studentId === student.id);
+          const status = existingAttendance ? existingAttendance.status : 'Có mặt';
+          const note = existingAttendance ? existingAttendance.note : '';
+
+          currentAttendanceData[student.id] = { status, note };
+
+          return `
+            <tr>
+              <td class="font-semibold">${index + 1}</td>
+              <td class="font-semibold">${student.name}</td>
+              <td>
+                <div class="flex gap-2">
+                  <button onclick="setAttendanceStatus('${student.id}', 'Có mặt')"
+                          class="attendance-btn ${status === 'Có mặt' ? 'active-present' : ''}">
+                    <i class="fas fa-check"></i> Có mặt
+                  </button>
+                  <button onclick="setAttendanceStatus('${student.id}', 'Vắng')"
+                          class="attendance-btn ${status === 'Vắng' ? 'active-absent' : ''}">
+                    <i class="fas fa-times"></i> Vắng
+                  </button>
+                  <button onclick="setAttendanceStatus('${student.id}', 'Muộn')"
+                          class="attendance-btn ${status === 'Muộn' ? 'active-late' : ''}">
+                    <i class="fas fa-clock"></i> Muộn
+                  </button>
+                  <button onclick="setAttendanceStatus('${student.id}', 'Có phép')"
+                          class="attendance-btn ${status === 'Có phép' ? 'active-excused' : ''}">
+                    <i class="fas fa-file-medical"></i> Có phép
+                  </button>
+                </div>
+              </td>
+              <td>
+                <input type="text" id="note-${student.id}" value="${note}"
+                       placeholder="Ghi chú (nếu có)"
+                       class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                       onchange="updateAttendanceNote('${student.id}', this.value)">
+              </td>
+            </tr>
+          `;
+        }).join('')}
+      </tbody>
+    </table>
+  `;
+
+  document.getElementById('attendance-actions').classList.remove('hidden');
+}
+
+function setAttendanceStatus(studentId, status) {
+  currentAttendanceData[studentId].status = status;
+
+  // Update UI
+  const buttons = document.querySelectorAll(`button[onclick*="${studentId}"]`);
+  buttons.forEach(btn => {
+    btn.classList.remove('active-present', 'active-absent', 'active-late', 'active-excused');
+  });
+
+  event.target.classList.add(
+    status === 'Có mặt' ? 'active-present' :
+    status === 'Vắng' ? 'active-absent' :
+    status === 'Muộn' ? 'active-late' : 'active-excused'
+  );
+}
+
+function updateAttendanceNote(studentId, note) {
+  currentAttendanceData[studentId].note = note;
+}
+
+function saveAllAttendance() {
+  const classId = document.getElementById('attendance-class').value;
+  const date = document.getElementById('attendance-date').value;
+
+  if (!classId || !date) {
+    alert('Vui lòng chọn lớp và ngày!');
+    return;
+  }
+
+  showLoading();
+
+  const attendanceRecords = Object.keys(currentAttendanceData).map(studentId => ({
+    studentId: studentId,
+    classId: classId,
+    date: date,
+    status: currentAttendanceData[studentId].status,
+    note: currentAttendanceData[studentId].note
+  }));
+
+  let savedCount = 0;
+  attendanceRecords.forEach(record => {
+    google.script.run
+      .withSuccessHandler(function() {
+        savedCount++;
+        if (savedCount === attendanceRecords.length) {
+          hideLoading();
+          alert('Lưu điểm danh thành công!');
+        }
+      })
+      .withFailureHandler(function(error) {
+        hideLoading();
+        alert('Lỗi: ' + error.message);
+      })
+      .saveAttendance(record);
+  });
+}
+
+// ==================== PAYMENTS ====================
+function loadPayments() {
+  const classId = document.getElementById('payment-class').value;
+  const month = document.getElementById('payment-month').value;
+
+  if (!classId || !month) {
+    document.getElementById('payments-list').innerHTML = '<p class="text-gray-500 text-center py-8">Vui lòng chọn lớp và tháng</p>';
+    return;
+  }
+
+  showLoading();
+
+  // Load students of class
+  google.script.run
+    .withSuccessHandler(function(students) {
+      if (students.length === 0) {
+        document.getElementById('payments-list').innerHTML = '<p class="text-gray-500 text-center py-8">Lớp này chưa có học sinh</p>';
+        hideLoading();
+        return;
+      }
+
+      // Load payments
+      google.script.run
+        .withSuccessHandler(function(payments) {
+          displayPayments(students, payments, classId, month);
+          hideLoading();
+        })
+        .withFailureHandler(function(error) {
+          hideLoading();
+          alert('Lỗi: ' + error.message);
+        })
+        .getPayments(classId, month);
+    })
+    .withFailureHandler(function(error) {
+      hideLoading();
+      alert('Lỗi: ' + error.message);
+    })
+    .getStudents(classId);
+}
+
+function displayPayments(students, payments, classId, month) {
+  const cls = allClasses.find(c => c.id === classId);
+  const tuition = cls ? cls.tuition : 0;
+
+  const container = document.getElementById('payments-list');
+  container.innerHTML = `
+    <table>
+      <thead>
+        <tr>
+          <th>STT</th>
+          <th>Họ tên</th>
+          <th>Học phí</th>
+          <th>Ngày đóng</th>
+          <th>Trạng thái</th>
+          <th class="text-center">Thao tác</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${students.map((student, index) => {
+          const payment = payments.find(p => p.studentId === student.id);
+          const status = payment ? payment.status : 'Chưa đóng';
+          const paidDate = payment ? payment.paidDate : '';
+          const amount = payment ? payment.amount : tuition;
+
+          return `
+            <tr>
+              <td class="font-semibold">${index + 1}</td>
+              <td class="font-semibold">${student.name}</td>
+              <td>${formatCurrency(amount)}</td>
+              <td>${paidDate ? formatDate(paidDate) : '-'}</td>
+              <td>
+                <span class="badge ${status === 'Đã đóng' ? 'badge-success' : 'badge-danger'}">
+                  ${status}
+                </span>
+              </td>
+              <td class="text-center">
+                ${status === 'Chưa đóng' ? `
+                  <button onclick="markAsPaid('${student.id}', '${classId}', '${month}', ${tuition})"
+                          class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm font-semibold">
+                    <i class="fas fa-check mr-1"></i> Đánh dấu đã đóng
+                  </button>
+                ` : `
+                  <button onclick="markAsUnpaid('${student.id}', '${classId}', '${month}', ${tuition})"
+                          class="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg text-sm font-semibold">
+                    <i class="fas fa-times mr-1"></i> Đánh dấu chưa đóng
+                  </button>
+                `}
+              </td>
+            </tr>
+          `;
+        }).join('')}
+      </tbody>
+    </table>
+  `;
+}
+
+function markAsPaid(studentId, classId, month, amount) {
+  showLoading();
+
+  const today = new Date().toISOString().split('T')[0];
+
+  google.script.run
+    .withSuccessHandler(function() {
+      hideLoading();
+      loadPayments();
+      loadDashboard();
+    })
+    .withFailureHandler(function(error) {
+      hideLoading();
+      alert('Lỗi: ' + error.message);
+    })
+    .savePayment({
+      studentId: studentId,
+      classId: classId,
+      month: month,
+      amount: amount,
+      paidDate: today,
+      status: 'Đã đóng'
+    });
+}
+
+function markAsUnpaid(studentId, classId, month, amount) {
+  showLoading();
+
+  google.script.run
+    .withSuccessHandler(function() {
+      hideLoading();
+      loadPayments();
+      loadDashboard();
+    })
+    .withFailureHandler(function(error) {
+      hideLoading();
+      alert('Lỗi: ' + error.message);
+    })
+    .savePayment({
+      studentId: studentId,
+      classId: classId,
+      month: month,
+      amount: amount,
+      paidDate: '',
+      status: 'Chưa đóng'
+    });
+}
+
+// ==================== UTILITIES ====================
+function loadClassesDropdowns() {
+  google.script.run
+    .withSuccessHandler(function(classes) {
+      allClasses = classes;
+
+      // Update all dropdowns
+      const dropdowns = [
+        'filter-class',
+        'attendance-class',
+        'payment-class'
+      ];
+
+      dropdowns.forEach(id => {
+        const select = document.getElementById(id);
+        if (select) {
+          const currentValue = select.value;
+          const options = classes.map(cls =>
+            `<option value="${cls.id}" ${cls.id === currentValue ? 'selected' : ''}>${cls.name}</option>`
+          ).join('');
+
+          if (id === 'filter-class') {
+            select.innerHTML = '<option value="">Tất cả lớp</option>' + options;
+          } else {
+            select.innerHTML = '<option value="">-- Chọn lớp --</option>' + options;
+          }
+        }
+      });
+    })
+    .getClasses();
+}
+
+function formatCurrency(amount) {
+  return new Intl.NumberFormat('vi-VN', {
+    style: 'currency',
+    currency: 'VND'
+  }).format(amount);
+}
+
+function formatDate(dateString) {
+  if (!dateString) return '-';
+  const date = new Date(dateString);
+  return date.toLocaleDateString('vi-VN');
+}
+
+function createModal(title, content) {
+  return `
+    <div id="modal" class="modal">
+      <div class="modal-content">
+        <div class="flex justify-between items-center mb-6">
+          <h3 class="text-2xl font-bold text-gray-800">${title}</h3>
+          <button onclick="closeModal()" class="text-gray-400 hover:text-gray-600 text-2xl">
+            <i class="fas fa-times"></i>
+          </button>
+        </div>
+        ${content}
+      </div>
+    </div>
+  `;
+}
+
+function showModal(modalHTML) {
+  document.getElementById('modals-container').innerHTML = modalHTML;
+  document.getElementById('modal').classList.add('show');
+}
+
+function closeModal() {
+  const modal = document.getElementById('modal');
+  if (modal) {
+    modal.classList.remove('show');
+    setTimeout(() => {
+      document.getElementById('modals-container').innerHTML = '';
+    }, 300);
+  }
+}
+
+function openGoogleSheet() {
+  google.script.run
+    .withSuccessHandler(function(url) {
+      window.open(url, '_blank');
+    })
+    .getSpreadsheetUrl();
+}
+</script>
+</body>
+</html>

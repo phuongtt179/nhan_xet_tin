@@ -1,0 +1,23 @@
+🚀 Các bước tiếp theo:
+Bước 1: Tạo Google Sheet
+Vào sheets.google.com
+Tạo spreadsheet mới
+Bước 2: Mở Apps Script
+Extensions → Apps Script
+Bước 3: Copy code
+Code.gs: Copy từ file Code.gs
+Tạo file HTML mới tên Index: Copy từ Index.html
+Tạo file HTML mới tên Stylesheet: Copy từ Stylesheet.html
+Tạo file HTML mới tên JavaScript: Copy từ JavaScript.html
+Bước 4: Khởi tạo
+Chọn function initializeSheets
+Click Run (▶️)
+Cấp quyền khi được yêu cầu
+Bước 5: Deploy
+Click Deploy → New deployment
+Chọn type: Web app
+Execute as: Me
+Who has access: Anyone
+Click Deploy và copy URL
+Bước 6: Sử dụng
+Mở URL trong trình duyệt và bắt đầu quản lý lớp học!
