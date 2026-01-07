@@ -70,10 +70,19 @@ input[type="month"]::-webkit-calendar-picker-indicator {
     font-size: 13px !important;
     padding-left: 8px !important;
     padding-right: 8px !important;
+    width: 100% !important;
   }
 
   input[type="date"]::-webkit-datetime-edit,
   input[type="month"]::-webkit-datetime-edit {
     font-size: 13px !important;
+    max-width: calc(100% - 30px) !important;
+    display: inline-block !important;
+  }
+
+  input[type="date"]::-webkit-calendar-picker-indicator,
+  input[type="month"]::-webkit-calendar-picker-indicator {
+    width: 20px !important;
+    min-width: 20px !important;
   }
 }
