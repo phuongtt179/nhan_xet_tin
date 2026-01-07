@@ -299,59 +299,59 @@ export default function StudentsPage() {
           <p className="text-gray-400 mt-2">Nhấn "Thêm học sinh" để bắt đầu</p>
         </div>
       ) : (
-        <div className="bg-white rounded-lg shadow overflow-hidden">
+        <div className="bg-white rounded-lg shadow overflow-x-auto">
           <table className="w-full">
             <thead className="bg-gray-50 border-b-2 border-gray-200">
               <tr>
-                <th className="px-6 py-4 text-left text-sm font-bold text-gray-700">Họ tên</th>
-                <th className="px-6 py-4 text-left text-sm font-bold text-gray-700">Lớp</th>
-                <th className="px-6 py-4 text-left text-sm font-bold text-gray-700">SĐT học sinh</th>
-                <th className="px-6 py-4 text-left text-sm font-bold text-gray-700">SĐT phụ huynh</th>
-                <th className="px-6 py-4 text-left text-sm font-bold text-gray-700">Ghi chú</th>
-                <th className="px-6 py-4 text-center text-sm font-bold text-gray-700">Thao tác</th>
+                <th className="px-2 lg:px-6 py-3 lg:py-4 text-left text-xs lg:text-sm font-bold text-gray-700">Họ tên</th>
+                <th className="px-2 lg:px-6 py-3 lg:py-4 text-left text-xs lg:text-sm font-bold text-gray-700">Lớp</th>
+                <th className="px-6 py-4 text-left text-sm font-bold text-gray-700 hidden lg:table-cell">SĐT học sinh</th>
+                <th className="px-6 py-4 text-left text-sm font-bold text-gray-700 hidden lg:table-cell">SĐT phụ huynh</th>
+                <th className="px-2 lg:px-6 py-3 lg:py-4 text-left text-xs lg:text-sm font-bold text-gray-700 hidden lg:table-cell">Ghi chú</th>
+                <th className="px-2 lg:px-6 py-3 lg:py-4 text-center text-xs lg:text-sm font-bold text-gray-700">Thao tác</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200">
               {filteredStudents.map((student) => (
                 <tr key={student.id} className="hover:bg-gray-50 transition-colors">
-                  <td className="px-6 py-4 font-semibold text-gray-800">{student.name}</td>
-                  <td className="px-6 py-4">
+                  <td className="px-2 lg:px-6 py-3 lg:py-4 font-semibold text-gray-800 text-xs lg:text-base whitespace-nowrap">{student.name}</td>
+                  <td className="px-2 lg:px-6 py-3 lg:py-4">
                     <div className="flex flex-wrap gap-1">
                       {student.primary_class && (
-                        <span className="px-3 py-1 bg-blue-600 text-white rounded-full text-xs font-semibold">
+                        <span className="px-2 lg:px-3 py-1 bg-blue-600 text-white rounded-full text-xs font-semibold whitespace-nowrap">
                           {student.primary_class.name} (Chính)
                         </span>
                       )}
                       {student.secondary_classes && student.secondary_classes.length > 0 && student.secondary_classes.map((cls: any) => (
-                        <span key={cls.id} className="px-3 py-1 bg-gray-200 text-gray-700 rounded-full text-xs font-semibold">
+                        <span key={cls.id} className="px-2 lg:px-3 py-1 bg-gray-200 text-gray-700 rounded-full text-xs font-semibold whitespace-nowrap">
                           {cls.name}
                         </span>
                       ))}
                       {!student.primary_class && (!student.secondary_classes || student.secondary_classes.length === 0) && (
-                        <span className="px-3 py-1 bg-gray-100 text-gray-500 rounded-full text-xs">
+                        <span className="px-2 lg:px-3 py-1 bg-gray-100 text-gray-500 rounded-full text-xs whitespace-nowrap">
                           N/A
                         </span>
                       )}
                     </div>
                   </td>
-                  <td className="px-6 py-4 text-gray-600">{student.phone || '-'}</td>
-                  <td className="px-6 py-4 text-gray-600">{student.parent_phone || '-'}</td>
-                  <td className="px-6 py-4 text-gray-600 max-w-xs truncate">{student.note || '-'}</td>
-                  <td className="px-6 py-4">
-                    <div className="flex justify-center gap-2">
+                  <td className="px-6 py-4 text-gray-600 hidden lg:table-cell">{student.phone || '-'}</td>
+                  <td className="px-6 py-4 text-gray-600 hidden lg:table-cell">{student.parent_phone || '-'}</td>
+                  <td className="px-6 py-4 text-gray-600 max-w-xs truncate hidden lg:table-cell">{student.note || '-'}</td>
+                  <td className="px-2 lg:px-6 py-3 lg:py-4">
+                    <div className="flex justify-center gap-1 lg:gap-2">
                       <button
                         onClick={() => openEditModal(student)}
-                        className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                        className="p-1.5 lg:p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
                         title="Sửa"
                       >
-                        <Edit2 size={18} />
+                        <Edit2 size={16} className="lg:w-[18px] lg:h-[18px]" />
                       </button>
                       <button
                         onClick={() => handleDelete(student.id, student.name)}
-                        className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                        className="p-1.5 lg:p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
                         title="Xóa"
                       >
-                        <Trash2 size={18} />
+                        <Trash2 size={16} className="lg:w-[18px] lg:h-[18px]" />
                       </button>
                     </div>
                   </td>
