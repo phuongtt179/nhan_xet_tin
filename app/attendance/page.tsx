@@ -274,7 +274,11 @@ export default function AttendancePage() {
             </thead>
             <tbody className="divide-y divide-gray-200">
               {attendanceRecords.map((record, index) => (
-                <tr key={record.studentId} className="hover:bg-gray-50 transition-colors">
+                <tr
+                  key={record.studentId}
+                  onClick={() => toggleAbsent(record.studentId)}
+                  className="hover:bg-gray-50 transition-colors cursor-pointer active:bg-gray-100"
+                >
                   <td className="px-2 lg:px-6 py-3 lg:py-4 text-xs lg:text-base font-semibold text-gray-800 whitespace-nowrap">
                     {index + 1}. {record.studentName}
                   </td>
@@ -282,8 +286,8 @@ export default function AttendancePage() {
                     <input
                       type="checkbox"
                       checked={record.isAbsent}
-                      onChange={() => toggleAbsent(record.studentId)}
-                      className="w-5 h-5 lg:w-6 lg:h-6 text-red-600 border-gray-300 rounded focus:ring-red-500 cursor-pointer"
+                      onChange={() => {}}
+                      className="w-5 h-5 lg:w-6 lg:h-6 text-red-600 border-gray-300 rounded focus:ring-red-500 pointer-events-none"
                     />
                   </td>
                 </tr>
