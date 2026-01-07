@@ -2,15 +2,14 @@
 
 import { useEffect, useState } from 'react';
 import { supabase, Student, Class, Attendance } from '@/lib/supabase';
-import { Check, X, Clock, FileText, Save } from 'lucide-react';
+import { Save } from 'lucide-react';
 import { format } from 'date-fns';
 
 interface AttendanceRecord {
   studentId: string;
   studentName: string;
-  status: 'present' | 'absent' | 'late' | 'excused' | '';
+  isAbsent: boolean; // true = vắng, false = có mặt
   note: string;
-  isPrimaryClass?: boolean; // Whether this class is the student's primary class
 }
 
 export default function AttendancePage() {
@@ -83,9 +82,8 @@ export default function AttendancePage() {
         return {
           studentId: student.id,
           studentName: student.name,
-          status: existing?.status || 'present',
+          isAbsent: existing?.status === 'absent', // true nếu vắng, false nếu có mặt
           note: existing?.note || '',
-          isPrimaryClass: sc.is_primary, // Track if this is their primary class
         };
       });
 
@@ -107,10 +105,7 @@ export default function AttendancePage() {
     try {
       setSaving(true);
 
-      // Filter only records with status
-      const recordsToSave = attendanceRecords.filter(r => r.status);
-
-      for (const record of recordsToSave) {
+      for (const record of attendanceRecords) {
         // Check if record exists
         const { data: existing } = await supabase
           .from('attendance')
@@ -120,12 +115,14 @@ export default function AttendancePage() {
           .eq('date', selectedDate)
           .single();
 
+        const status = record.isAbsent ? 'absent' : 'present';
+
         if (existing) {
           // Update
           await supabase
             .from('attendance')
             .update({
-              status: record.status,
+              status: status,
               note: record.note,
             })
             .eq('id', existing.id);
@@ -137,7 +134,7 @@ export default function AttendancePage() {
               student_id: record.studentId,
               class_id: selectedClassId,
               date: selectedDate,
-              status: record.status,
+              status: status,
               note: record.note,
             }]);
         }
@@ -152,41 +149,32 @@ export default function AttendancePage() {
     }
   }
 
-  function updateAttendance(studentId: string, field: 'status' | 'note', value: string) {
+  function toggleAbsent(studentId: string) {
     setAttendanceRecords(records =>
       records.map(r =>
         r.studentId === studentId
-          ? { ...r, [field]: value }
+          ? { ...r, isAbsent: !r.isAbsent }
           : r
       )
     );
   }
 
-  const statusButtons = [
-    { value: 'present', label: 'Có mặt', icon: Check, color: 'bg-green-100 text-green-700 border-green-500' },
-    { value: 'absent', label: 'Vắng', icon: X, color: 'bg-red-100 text-red-700 border-red-500' },
-    { value: 'late', label: 'Muộn', icon: Clock, color: 'bg-yellow-100 text-yellow-700 border-yellow-500' },
-    { value: 'excused', label: 'Có phép', icon: FileText, color: 'bg-blue-100 text-blue-700 border-blue-500' },
-  ];
-
   const stats = {
     total: attendanceRecords.length,
-    present: attendanceRecords.filter(r => r.status === 'present').length,
-    absent: attendanceRecords.filter(r => r.status === 'absent').length,
-    late: attendanceRecords.filter(r => r.status === 'late').length,
-    excused: attendanceRecords.filter(r => r.status === 'excused').length,
+    present: attendanceRecords.filter(r => !r.isAbsent).length,
+    absent: attendanceRecords.filter(r => r.isAbsent).length,
   };
 
   return (
-    <div className="p-8">
-      <div className="mb-6">
-        <h1 className="text-3xl font-bold text-gray-800">Điểm danh</h1>
-        <p className="text-gray-600 mt-1">Điểm danh học sinh theo buổi học</p>
+    <div className="p-4 lg:p-8">
+      <div className="mb-4 lg:mb-6">
+        <h1 className="text-2xl lg:text-3xl font-bold text-gray-800">Điểm danh</h1>
+        <p className="text-sm lg:text-base text-gray-600 mt-1">Điểm danh học sinh theo buổi học</p>
       </div>
 
       {/* Controls */}
-      <div className="bg-white p-6 rounded-lg shadow mb-6 space-y-4">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="bg-white p-4 lg:p-6 rounded-lg shadow mb-4 lg:mb-6 space-y-4">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
           <div>
             <label className="block text-sm font-semibold text-gray-700 mb-2">
               Lớp <span className="text-red-500">*</span>
@@ -194,7 +182,7 @@ export default function AttendancePage() {
             <select
               value={selectedClassId}
               onChange={(e) => setSelectedClassId(e.target.value)}
-              className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none"
+              className="w-full px-3 lg:px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none text-sm lg:text-base"
             >
               {classes.length === 0 ? (
                 <option value="">Chưa có lớp học</option>
@@ -216,7 +204,7 @@ export default function AttendancePage() {
               type="date"
               value={selectedDate}
               onChange={(e) => setSelectedDate(e.target.value)}
-              className="w-full max-w-full min-w-0 px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none"
+              className="w-full max-w-full min-w-0 px-3 lg:px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none text-sm lg:text-base"
             />
           </div>
 
@@ -224,40 +212,42 @@ export default function AttendancePage() {
             <button
               onClick={handleSave}
               disabled={saving || !selectedClassId || attendanceRecords.length === 0}
-              className="w-full flex items-center justify-center gap-2 px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-semibold disabled:bg-gray-300 disabled:cursor-not-allowed"
+              className="w-full flex items-center justify-center gap-2 px-4 lg:px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-semibold disabled:bg-gray-300 disabled:cursor-not-allowed text-sm lg:text-base"
             >
-              <Save size={20} />
+              <Save size={18} className="lg:w-5 lg:h-5" />
               {saving ? 'Đang lưu...' : 'Lưu điểm danh'}
             </button>
           </div>
         </div>
-
-        {/* Stats */}
-        {attendanceRecords.length > 0 && (
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-4 pt-4 border-t">
-            <div className="text-center">
-              <p className="text-2xl font-bold text-gray-800">{stats.total}</p>
-              <p className="text-sm text-gray-600">Tổng số</p>
-            </div>
-            <div className="text-center">
-              <p className="text-2xl font-bold text-green-600">{stats.present}</p>
-              <p className="text-sm text-gray-600">Có mặt</p>
-            </div>
-            <div className="text-center">
-              <p className="text-2xl font-bold text-red-600">{stats.absent}</p>
-              <p className="text-sm text-gray-600">Vắng</p>
-            </div>
-            <div className="text-center">
-              <p className="text-2xl font-bold text-yellow-600">{stats.late}</p>
-              <p className="text-sm text-gray-600">Muộn</p>
-            </div>
-            <div className="text-center">
-              <p className="text-2xl font-bold text-blue-600">{stats.excused}</p>
-              <p className="text-sm text-gray-600">Có phép</p>
-            </div>
-          </div>
-        )}
       </div>
+
+      {/* Stats Table */}
+      {attendanceRecords.length > 0 && (
+        <div className="bg-white rounded-lg shadow mb-4 lg:mb-6 overflow-hidden">
+          <table className="w-full">
+            <thead className="bg-gray-50 border-b-2 border-gray-200">
+              <tr>
+                <th className="px-3 lg:px-6 py-2 lg:py-3 text-center text-xs lg:text-sm font-bold text-gray-700">Tổng số</th>
+                <th className="px-3 lg:px-6 py-2 lg:py-3 text-center text-xs lg:text-sm font-bold text-gray-700">Có mặt</th>
+                <th className="px-3 lg:px-6 py-2 lg:py-3 text-center text-xs lg:text-sm font-bold text-gray-700">Vắng</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr className="border-b border-gray-200">
+                <td className="px-3 lg:px-6 py-3 lg:py-4 text-center">
+                  <span className="text-xl lg:text-2xl font-bold text-gray-800">{stats.total}</span>
+                </td>
+                <td className="px-3 lg:px-6 py-3 lg:py-4 text-center">
+                  <span className="text-xl lg:text-2xl font-bold text-green-600">{stats.present}</span>
+                </td>
+                <td className="px-3 lg:px-6 py-3 lg:py-4 text-center">
+                  <span className="text-xl lg:text-2xl font-bold text-red-600">{stats.absent}</span>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      )}
 
       {/* Attendance List */}
       {loading ? (
@@ -266,64 +256,40 @@ export default function AttendancePage() {
         </div>
       ) : !selectedClassId ? (
         <div className="text-center py-12 bg-white rounded-lg shadow">
-          <p className="text-gray-500 text-lg">Vui lòng chọn lớp để điểm danh</p>
+          <p className="text-gray-500 text-sm lg:text-lg">Vui lòng chọn lớp để điểm danh</p>
         </div>
       ) : attendanceRecords.length === 0 ? (
         <div className="text-center py-12 bg-white rounded-lg shadow">
-          <p className="text-gray-500 text-lg">Lớp này chưa có học sinh</p>
-          <p className="text-gray-400 mt-2">Thêm học sinh trước khi điểm danh</p>
+          <p className="text-gray-500 text-sm lg:text-lg">Lớp này chưa có học sinh</p>
+          <p className="text-gray-400 text-xs lg:text-base mt-2">Thêm học sinh trước khi điểm danh</p>
         </div>
       ) : (
-        <div className="space-y-4">
-          {attendanceRecords.map((record, index) => (
-            <div
-              key={record.studentId}
-              className="bg-white p-6 rounded-lg shadow hover:shadow-md transition-shadow"
-            >
-              <div className="flex flex-col md:flex-row md:items-center gap-4">
-                <div className="flex-shrink-0 w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center">
-                  <span className="text-lg font-bold text-blue-600">{index + 1}</span>
-                </div>
-
-                <div className="flex-1">
-                  <h3 className="text-lg font-bold text-gray-800">{record.studentName}</h3>
-                </div>
-
-                <div className="flex flex-wrap gap-2">
-                  {statusButtons.map((btn) => {
-                    const Icon = btn.icon;
-                    const isActive = record.status === btn.value;
-                    return (
-                      <button
-                        key={btn.value}
-                        onClick={() => updateAttendance(record.studentId, 'status', btn.value)}
-                        className={`
-                          flex items-center gap-2 px-4 py-2 rounded-lg border-2 transition-all font-semibold
-                          ${isActive
-                            ? btn.color
-                            : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'
-                          }
-                        `}
-                      >
-                        <Icon size={18} />
-                        {btn.label}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              <div className="mt-4">
-                <input
-                  type="text"
-                  value={record.note}
-                  onChange={(e) => updateAttendance(record.studentId, 'note', e.target.value)}
-                  placeholder="Ghi chú (tùy chọn)"
-                  className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none text-sm"
-                />
-              </div>
-            </div>
-          ))}
+        <div className="bg-white rounded-lg shadow overflow-x-auto">
+          <table className="w-full">
+            <thead className="bg-gray-50 border-b-2 border-gray-200">
+              <tr>
+                <th className="px-2 lg:px-6 py-3 lg:py-4 text-left text-xs lg:text-sm font-bold text-gray-700">Họ và tên</th>
+                <th className="px-2 lg:px-6 py-3 lg:py-4 text-center text-xs lg:text-sm font-bold text-gray-700 w-20 lg:w-32">Vắng</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-200">
+              {attendanceRecords.map((record, index) => (
+                <tr key={record.studentId} className="hover:bg-gray-50 transition-colors">
+                  <td className="px-2 lg:px-6 py-3 lg:py-4 text-xs lg:text-base font-semibold text-gray-800 whitespace-nowrap">
+                    {index + 1}. {record.studentName}
+                  </td>
+                  <td className="px-2 lg:px-6 py-3 lg:py-4 text-center">
+                    <input
+                      type="checkbox"
+                      checked={record.isAbsent}
+                      onChange={() => toggleAbsent(record.studentId)}
+                      className="w-5 h-5 lg:w-6 lg:h-6 text-red-600 border-gray-300 rounded focus:ring-red-500 cursor-pointer"
+                    />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
     </div>
