@@ -278,7 +278,7 @@ export default function PaymentsPage() {
               type="month"
               value={selectedMonth}
               onChange={(e) => setSelectedMonth(e.target.value)}
-              className="w-full px-3 lg:px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none text-sm lg:text-base"
+              className="w-full max-w-full min-w-0 px-3 lg:px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none text-sm lg:text-base"
             />
           </div>
         </div>
@@ -402,8 +402,9 @@ export default function PaymentsPage() {
             {paymentRecords.map((record, index) => (
               <div
                 key={record.studentId}
+                onClick={() => record.status === 'unpaid' && openPaymentModal(record.studentId)}
                 className={`bg-white rounded-lg shadow-md p-4 border-l-4 ${
-                  record.status === 'paid' ? 'border-green-500' : 'border-red-500'
+                  record.status === 'paid' ? 'border-green-500' : 'border-red-500 cursor-pointer active:bg-gray-50'
                 }`}
               >
                 <div className="flex justify-between items-start mb-3">
@@ -440,36 +441,31 @@ export default function PaymentsPage() {
                     )}
                   </div>
                 </div>
-                <div className="flex gap-2 mt-3 pt-3 border-t">
-                  {record.status === 'unpaid' ? (
+                {record.status === 'paid' && (
+                  <div className="flex gap-2 mt-3 pt-3 border-t">
                     <button
-                      onClick={() => openPaymentModal(record.studentId)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        openPaymentModal(record.studentId);
+                      }}
                       disabled={saving}
-                      className="flex-1 px-3 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-semibold text-sm disabled:bg-gray-300 flex items-center justify-center gap-1"
+                      className="flex-1 px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-semibold text-sm disabled:bg-gray-300"
                     >
-                      <CheckCircle size={14} />
-                      Đã đóng
+                      Sửa
                     </button>
-                  ) : (
-                    <>
-                      <button
-                        onClick={() => openPaymentModal(record.studentId)}
-                        disabled={saving}
-                        className="flex-1 px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-semibold text-sm disabled:bg-gray-300"
-                      >
-                        Sửa
-                      </button>
-                      <button
-                        onClick={() => markAsUnpaid(record.studentId)}
-                        disabled={saving}
-                        className="flex-1 px-3 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors font-semibold text-sm disabled:bg-gray-300 flex items-center justify-center gap-1"
-                      >
-                        <XCircle size={14} />
-                        Chưa đóng
-                      </button>
-                    </>
-                  )}
-                </div>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        markAsUnpaid(record.studentId);
+                      }}
+                      disabled={saving}
+                      className="flex-1 px-3 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors font-semibold text-sm disabled:bg-gray-300 flex items-center justify-center gap-1"
+                    >
+                      <XCircle size={14} />
+                      Chưa đóng
+                    </button>
+                  </div>
+                )}
               </div>
             ))}
           </div>

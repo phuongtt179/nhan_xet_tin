@@ -166,29 +166,30 @@ export default function StudentsPage() {
     : students.filter(s => s.class_id === filterClassId);
 
   return (
-    <div className="p-8">
-      <div className="flex justify-between items-center mb-6">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-800">Quản lý Học sinh</h1>
-          <p className="text-gray-600 mt-1">Danh sách học sinh các lớp</p>
-        </div>
+    <div className="p-4 lg:p-8">
+      {/* Header - Mobile: 3 rows, Desktop: 1 row */}
+      <div className="mb-6 space-y-3 lg:space-y-0">
+        <h1 className="text-2xl lg:text-3xl font-bold text-gray-800">Quản lý Học sinh</h1>
+        <p className="text-sm lg:text-base text-gray-600">Danh sách học sinh các lớp</p>
         <button
           onClick={openAddModal}
-          className="flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-semibold shadow-lg hover:shadow-xl"
+          className="w-full lg:w-auto flex items-center justify-center gap-2 px-4 lg:px-6 py-2 lg:py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-semibold shadow-lg hover:shadow-xl text-sm lg:text-base"
         >
-          <Plus size={20} />
+          <Plus size={18} />
           Thêm học sinh
         </button>
       </div>
 
-      {/* Filter */}
-      <div className="mb-6 flex items-center gap-3 bg-white p-4 rounded-lg shadow">
-        <Filter size={20} className="text-gray-600" />
-        <label className="font-semibold text-gray-700">Lọc theo lớp:</label>
+      {/* Filter - Mobile: 3 rows, Desktop: 1 row */}
+      <div className="mb-6 bg-white p-3 lg:p-4 rounded-lg shadow space-y-3 lg:space-y-0 lg:flex lg:items-center lg:gap-3">
+        <div className="flex items-center gap-2 lg:gap-3">
+          <Filter size={18} className="text-gray-600" />
+          <label className="text-sm lg:text-base font-semibold text-gray-700">Lọc theo lớp:</label>
+        </div>
         <select
           value={filterClassId}
           onChange={(e) => setFilterClassId(e.target.value)}
-          className="px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none"
+          className="w-full lg:w-auto px-3 lg:px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none text-sm lg:text-base"
         >
           <option value="all">Tất cả lớp</option>
           {classes.map((classItem) => (
@@ -197,7 +198,7 @@ export default function StudentsPage() {
             </option>
           ))}
         </select>
-        <span className="ml-auto text-gray-600 font-semibold">
+        <span className="block lg:ml-auto text-gray-600 font-semibold text-sm lg:text-base">
           Tổng: {filteredStudents.length} học sinh
         </span>
       </div>

@@ -75,7 +75,7 @@ export default function AttendancePage() {
         return {
           studentId: student.id,
           studentName: student.name,
-          status: existing?.status || '',
+          status: existing?.status || 'present',
           note: existing?.note || '',
         };
       });
@@ -207,7 +207,7 @@ export default function AttendancePage() {
               type="date"
               value={selectedDate}
               onChange={(e) => setSelectedDate(e.target.value)}
-              className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none"
+              className="w-full max-w-full min-w-0 px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none"
             />
           </div>
 
