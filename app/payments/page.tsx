@@ -10,6 +10,8 @@ interface PaymentRecord {
   studentName: string;
   amount: number;
   sessions: number;
+  calculatedSessions?: number; // Auto-calculated from attendance
+  allClassesNames?: string[]; // List of all classes for this student
   status: 'paid' | 'unpaid';
   paidDate: string | null;
 }
@@ -28,6 +30,61 @@ export default function PaymentsPage() {
     sessions: '',
     paidDate: format(new Date(), 'yyyy-MM-dd'),
   });
+
+  // Helper function to calculate sessions from attendance across ALL classes
+  async function calculateSessionsForStudent(
+    studentId: string,
+    month: string
+  ): Promise<{ sessions: number; classNames: string[] }> {
+    try {
+      // Parse month (YYYY-MM)
+      const [year, monthNum] = month.split('-');
+      const startDate = `${year}-${monthNum}-01`;
+      const lastDay = new Date(parseInt(year), parseInt(monthNum), 0).getDate();
+      const endDate = `${year}-${monthNum}-${String(lastDay).padStart(2, '0')}`;
+
+      // Get ALL classes for this student
+      const { data: studentClasses, error: scError } = await supabase
+        .from('student_classes')
+        .select(`
+          class_id,
+          classes (
+            id,
+            name
+          )
+        `)
+        .eq('student_id', studentId);
+
+      if (scError) throw scError;
+
+      if (!studentClasses || studentClasses.length === 0) {
+        return { sessions: 0, classNames: [] };
+      }
+
+      const classIds = studentClasses.map((sc: any) => sc.class_id);
+      const classNames = studentClasses.map((sc: any) => sc.classes.name);
+
+      // Count attendance records where status = 'present' across ALL classes
+      const { data: attendanceData, error: attError } = await supabase
+        .from('attendance')
+        .select('id')
+        .eq('student_id', studentId)
+        .in('class_id', classIds)
+        .gte('date', startDate)
+        .lte('date', endDate)
+        .eq('status', 'present'); // Only count 'present' status
+
+      if (attError) throw attError;
+
+      return {
+        sessions: attendanceData?.length || 0,
+        classNames: classNames,
+      };
+    } catch (error) {
+      console.error('Error calculating sessions:', error);
+      return { sessions: 0, classNames: [] };
+    }
+  }
 
   useEffect(() => {
     loadClasses();
@@ -60,13 +117,20 @@ export default function PaymentsPage() {
     try {
       setLoading(true);
 
-      const { data: students, error: studentsError } = await supabase
-        .from('students')
-        .select('*')
+      // Get students WHERE this is their PRIMARY class
+      const { data: studentClassesData, error: scError } = await supabase
+        .from('student_classes')
+        .select(`
+          student_id,
+          students (
+            id,
+            name
+          )
+        `)
         .eq('class_id', selectedClassId)
-        .order('name');
+        .eq('is_primary', true); // ONLY primary class students
 
-      if (studentsError) throw studentsError;
+      if (scError) throw scError;
 
       const { data: classData, error: classError } = await supabase
         .from('classes')
@@ -84,17 +148,30 @@ export default function PaymentsPage() {
 
       if (paymentsError) throw paymentsError;
 
-      const records: PaymentRecord[] = (students || []).map((student) => {
-        const existing = existingPayments?.find(p => p.student_id === student.id);
-        return {
-          studentId: student.id,
-          studentName: student.name,
-          amount: existing?.amount || classData?.tuition || 0,
-          sessions: existing?.sessions || 1,
-          status: existing?.status || 'unpaid',
-          paidDate: existing?.paid_date || null,
-        };
-      });
+      // Calculate sessions for each student across ALL their classes
+      const records: PaymentRecord[] = await Promise.all(
+        (studentClassesData || []).map(async (sc: any) => {
+          const student = sc.students;
+          const existing = existingPayments?.find(p => p.student_id === student.id);
+
+          // AUTO-CALCULATE sessions from attendance across ALL classes
+          const { sessions: calculatedSessions, classNames } = await calculateSessionsForStudent(
+            student.id,
+            selectedMonth
+          );
+
+          return {
+            studentId: student.id,
+            studentName: student.name,
+            amount: existing?.amount || classData?.tuition || 0,
+            sessions: existing?.sessions || calculatedSessions, // Use saved OR calculated
+            calculatedSessions: calculatedSessions, // Store for display/comparison
+            allClassesNames: classNames, // All classes contributing to sessions
+            status: existing?.status || 'unpaid',
+            paidDate: existing?.paid_date || null,
+          };
+        })
+      );
 
       setPaymentRecords(records);
     } catch (error) {
@@ -339,7 +416,19 @@ export default function PaymentsPage() {
                   <tr key={record.studentId} className="hover:bg-gray-50 transition-colors">
                     <td className="px-6 py-4 text-gray-600">{index + 1}</td>
                     <td className="px-6 py-4 font-semibold text-gray-800">{record.studentName}</td>
-                    <td className="px-6 py-4 text-center text-gray-600">{record.sessions} buổi</td>
+                    <td className="px-6 py-4 text-center">
+                      <div>
+                        <span className="font-semibold text-gray-800">{record.sessions} buổi</span>
+                        {record.calculatedSessions !== undefined && record.sessions !== record.calculatedSessions && (
+                          <span className="ml-1 text-xs text-orange-600 font-semibold">(Đã sửa)</span>
+                        )}
+                      </div>
+                      {record.allClassesNames && record.allClassesNames.length > 0 && (
+                        <div className="text-xs text-gray-500 mt-1">
+                          {record.allClassesNames.join(', ')}
+                        </div>
+                      )}
+                    </td>
                     <td className="px-6 py-4 text-right font-semibold text-gray-800">
                       {record.amount.toLocaleString('vi-VN')} đ
                     </td>
@@ -414,9 +503,17 @@ export default function PaymentsPage() {
                       <h3 className="font-bold text-gray-800">{record.studentName}</h3>
                     </div>
                     <div className="mt-2 space-y-1">
-                      <p className="text-sm text-gray-600">
+                      <div className="text-sm text-gray-600">
                         <span className="font-semibold">Số buổi:</span> {record.sessions} buổi
-                      </p>
+                        {record.calculatedSessions !== undefined && record.sessions !== record.calculatedSessions && (
+                          <span className="ml-1 text-xs text-orange-600 font-semibold">(Đã sửa)</span>
+                        )}
+                      </div>
+                      {record.allClassesNames && record.allClassesNames.length > 0 && (
+                        <p className="text-xs text-gray-500">
+                          Từ các lớp: {record.allClassesNames.join(', ')}
+                        </p>
+                      )}
                       <p className="text-sm text-gray-600">
                         <span className="font-semibold">Số tiền:</span> {record.amount.toLocaleString('vi-VN')} đ
                       </p>
@@ -508,16 +605,33 @@ export default function PaymentsPage() {
                 <input
                   type="number"
                   required
-                  min="1"
+                  min="0"
                   step="1"
                   value={paymentForm.sessions}
                   onChange={(e) => setPaymentForm({ ...paymentForm, sessions: e.target.value })}
                   className="w-full px-3 lg:px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none text-sm lg:text-base"
                   placeholder="VD: 4"
                 />
-                <p className="text-xs lg:text-sm text-gray-500 mt-1">
-                  Tổng số buổi học trong tháng này
-                </p>
+                <div className="flex justify-between items-center mt-1">
+                  <p className="text-xs text-gray-600">
+                    Tự động tính: <span className="font-semibold text-blue-600">{editingPayment.calculatedSessions || 0} buổi</span>
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setPaymentForm({
+                      ...paymentForm,
+                      sessions: (editingPayment.calculatedSessions || 0).toString()
+                    })}
+                    className="text-xs text-blue-600 hover:text-blue-800 hover:underline font-semibold"
+                  >
+                    Áp dụng
+                  </button>
+                </div>
+                {editingPayment.allClassesNames && editingPayment.allClassesNames.length > 0 && (
+                  <p className="text-xs text-gray-500 mt-1">
+                    Từ các lớp: {editingPayment.allClassesNames.join(', ')}
+                  </p>
+                )}
               </div>
 
               <div>

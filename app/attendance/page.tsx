@@ -10,6 +10,7 @@ interface AttendanceRecord {
   studentName: string;
   status: 'present' | 'absent' | 'late' | 'excused' | '';
   note: string;
+  isPrimaryClass?: boolean; // Whether this class is the student's primary class
 }
 
 export default function AttendancePage() {
@@ -51,14 +52,20 @@ export default function AttendancePage() {
     try {
       setLoading(true);
 
-      // Get students in the class
-      const { data: students, error: studentsError } = await supabase
-        .from('students')
-        .select('*')
-        .eq('class_id', selectedClassId)
-        .order('name');
+      // Get students enrolled in this class (primary OR secondary)
+      const { data: studentClassesData, error: scError } = await supabase
+        .from('student_classes')
+        .select(`
+          student_id,
+          is_primary,
+          students (
+            id,
+            name
+          )
+        `)
+        .eq('class_id', selectedClassId);
 
-      if (studentsError) throw studentsError;
+      if (scError) throw scError;
 
       // Get existing attendance records for this date
       const { data: existingAttendance, error: attendanceError } = await supabase
@@ -70,13 +77,15 @@ export default function AttendancePage() {
       if (attendanceError) throw attendanceError;
 
       // Create attendance records array
-      const records: AttendanceRecord[] = (students || []).map((student) => {
+      const records: AttendanceRecord[] = (studentClassesData || []).map((sc: any) => {
+        const student = sc.students;
         const existing = existingAttendance?.find(a => a.student_id === student.id);
         return {
           studentId: student.id,
           studentName: student.name,
           status: existing?.status || 'present',
           note: existing?.note || '',
+          isPrimaryClass: sc.is_primary, // Track if this is their primary class
         };
       });
 

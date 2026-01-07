@@ -1,26 +1,23 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { supabase, Student, Class } from '@/lib/supabase';
+import { supabase, Student, Class, StudentWithClasses } from '@/lib/supabase';
 import { Plus, Edit2, Trash2, X, Filter } from 'lucide-react';
 
-interface StudentWithClassName extends Student {
-  class_name?: string;
-}
-
 export default function StudentsPage() {
-  const [students, setStudents] = useState<StudentWithClassName[]>([]);
+  const [students, setStudents] = useState<StudentWithClasses[]>([]);
   const [classes, setClasses] = useState<Class[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
-  const [editingStudent, setEditingStudent] = useState<Student | null>(null);
+  const [editingStudent, setEditingStudent] = useState<StudentWithClasses | null>(null);
   const [filterClassId, setFilterClassId] = useState<string>('all');
   const [formData, setFormData] = useState({
     name: '',
     phone: '',
     parent_phone: '',
-    class_id: '',
     note: '',
+    primary_class_id: '',
+    secondary_class_ids: [] as string[],
   });
 
   useEffect(() => {
@@ -48,24 +45,50 @@ export default function StudentsPage() {
   async function loadStudents() {
     try {
       setLoading(true);
-      const { data: studentsData, error } = await supabase
+
+      // Load all students
+      const { data: studentsData, error: studentsError } = await supabase
         .from('students')
-        .select(`
-          *,
-          classes!students_class_id_fkey (
-            name
-          )
-        `)
+        .select('*')
         .order('name');
 
-      if (error) throw error;
+      if (studentsError) throw studentsError;
 
-      const studentsWithClassName = (studentsData || []).map((student: any) => ({
-        ...student,
-        class_name: student.classes?.name || 'N/A',
-      }));
+      // Load student-class relationships with class info
+      const { data: studentClassesData, error: scError } = await supabase
+        .from('student_classes')
+        .select(`
+          student_id,
+          class_id,
+          is_primary,
+          classes (
+            id,
+            name,
+            subject
+          )
+        `);
 
-      setStudents(studentsWithClassName);
+      if (scError) throw scError;
+
+      // Merge data: each student gets primary_class + secondary_classes arrays
+      const studentsWithClasses = (studentsData || []).map((student: any) => {
+        const studentClasses = (studentClassesData || []).filter(
+          (sc: any) => sc.student_id === student.id
+        );
+        const primaryClass = studentClasses.find((sc: any) => sc.is_primary);
+        const secondaryClasses = studentClasses.filter((sc: any) => !sc.is_primary);
+
+        return {
+          ...student,
+          primary_class: primaryClass?.classes,
+          secondary_classes: secondaryClasses.map((sc: any) => sc.classes),
+          class_count: studentClasses.length,
+          class_name: (primaryClass?.classes as any)?.name || 'N/A', // Backward compat
+          class_id: primaryClass?.class_id || '', // Backward compat
+        };
+      });
+
+      setStudents(studentsWithClasses);
     } catch (error) {
       console.error('Error loading students:', error);
       alert('Lỗi khi tải danh sách học sinh');
@@ -78,37 +101,85 @@ export default function StudentsPage() {
     e.preventDefault();
 
     try {
+      // Warn if changing primary class
+      if (editingStudent && editingStudent.class_id &&
+          editingStudent.class_id !== formData.primary_class_id) {
+        const confirmed = confirm(
+          'Bạn đang thay đổi lớp chính. Học phí cũ sẽ được giữ nguyên ở lớp cũ, ' +
+          'học phí mới sẽ tạo ở lớp mới. Tiếp tục?'
+        );
+        if (!confirmed) return;
+      }
+
+      let studentId: string;
+
       if (editingStudent) {
-        // Update
-        const { error } = await supabase
+        // UPDATE student info (not class_id - handled below via student_classes)
+        const { error: updateError } = await supabase
           .from('students')
           .update({
             name: formData.name,
             phone: formData.phone,
             parent_phone: formData.parent_phone,
-            class_id: formData.class_id,
             note: formData.note,
           })
           .eq('id', editingStudent.id);
 
-        if (error) throw error;
-        alert('Cập nhật học sinh thành công!');
+        if (updateError) throw updateError;
+        studentId = editingStudent.id;
       } else {
-        // Create
-        const { error } = await supabase
+        // CREATE student (without class_id - handled below)
+        const { data: newStudent, error: insertError } = await supabase
           .from('students')
           .insert([{
             name: formData.name,
             phone: formData.phone,
             parent_phone: formData.parent_phone,
-            class_id: formData.class_id,
             note: formData.note,
-          }]);
+          }])
+          .select()
+          .single();
 
-        if (error) throw error;
-        alert('Thêm học sinh thành công!');
+        if (insertError) throw insertError;
+        studentId = newStudent.id;
       }
 
+      // DELETE old student_classes relationships
+      await supabase
+        .from('student_classes')
+        .delete()
+        .eq('student_id', studentId);
+
+      // INSERT new relationships
+      const classRelationships = [];
+
+      // Primary class
+      if (formData.primary_class_id) {
+        classRelationships.push({
+          student_id: studentId,
+          class_id: formData.primary_class_id,
+          is_primary: true,
+        });
+      }
+
+      // Secondary classes
+      formData.secondary_class_ids.forEach(classId => {
+        classRelationships.push({
+          student_id: studentId,
+          class_id: classId,
+          is_primary: false,
+        });
+      });
+
+      if (classRelationships.length > 0) {
+        const { error: scError } = await supabase
+          .from('student_classes')
+          .insert(classRelationships);
+
+        if (scError) throw scError;
+      }
+
+      alert(editingStudent ? 'Cập nhật học sinh thành công!' : 'Thêm học sinh thành công!');
       closeModal();
       loadStudents();
     } catch (error) {
@@ -139,18 +210,26 @@ export default function StudentsPage() {
 
   function openAddModal() {
     setEditingStudent(null);
-    setFormData({ name: '', phone: '', parent_phone: '', class_id: '', note: '' });
+    setFormData({
+      name: '',
+      phone: '',
+      parent_phone: '',
+      note: '',
+      primary_class_id: '',
+      secondary_class_ids: [],
+    });
     setShowModal(true);
   }
 
-  function openEditModal(student: Student) {
+  function openEditModal(student: StudentWithClasses) {
     setEditingStudent(student);
     setFormData({
       name: student.name,
       phone: student.phone,
       parent_phone: student.parent_phone,
-      class_id: student.class_id,
       note: student.note,
+      primary_class_id: student.class_id || '',
+      secondary_class_ids: student.secondary_classes?.map(c => c.id) || [],
     });
     setShowModal(true);
   }
@@ -158,7 +237,14 @@ export default function StudentsPage() {
   function closeModal() {
     setShowModal(false);
     setEditingStudent(null);
-    setFormData({ name: '', phone: '', parent_phone: '', class_id: '', note: '' });
+    setFormData({
+      name: '',
+      phone: '',
+      parent_phone: '',
+      note: '',
+      primary_class_id: '',
+      secondary_class_ids: [],
+    });
   }
 
   const filteredStudents = filterClassId === 'all'
@@ -230,9 +316,23 @@ export default function StudentsPage() {
                 <tr key={student.id} className="hover:bg-gray-50 transition-colors">
                   <td className="px-6 py-4 font-semibold text-gray-800">{student.name}</td>
                   <td className="px-6 py-4">
-                    <span className="px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-sm font-semibold">
-                      {student.class_name}
-                    </span>
+                    <div className="flex flex-wrap gap-1">
+                      {student.primary_class && (
+                        <span className="px-3 py-1 bg-blue-600 text-white rounded-full text-xs font-semibold">
+                          {student.primary_class.name} (Chính)
+                        </span>
+                      )}
+                      {student.secondary_classes && student.secondary_classes.length > 0 && student.secondary_classes.map((cls: any) => (
+                        <span key={cls.id} className="px-3 py-1 bg-gray-200 text-gray-700 rounded-full text-xs font-semibold">
+                          {cls.name}
+                        </span>
+                      ))}
+                      {!student.primary_class && (!student.secondary_classes || student.secondary_classes.length === 0) && (
+                        <span className="px-3 py-1 bg-gray-100 text-gray-500 rounded-full text-xs">
+                          N/A
+                        </span>
+                      )}
+                    </div>
                   </td>
                   <td className="px-6 py-4 text-gray-600">{student.phone || '-'}</td>
                   <td className="px-6 py-4 text-gray-600">{student.parent_phone || '-'}</td>
@@ -295,21 +395,78 @@ export default function StudentsPage() {
 
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  Lớp <span className="text-red-500">*</span>
+                  Lớp chính <span className="text-red-500">*</span>
                 </label>
                 <select
                   required
-                  value={formData.class_id}
-                  onChange={(e) => setFormData({ ...formData, class_id: e.target.value })}
+                  value={formData.primary_class_id}
+                  onChange={(e) => {
+                    const newPrimaryId = e.target.value;
+                    setFormData({
+                      ...formData,
+                      primary_class_id: newPrimaryId,
+                      // Remove from secondary if selected as primary
+                      secondary_class_ids: formData.secondary_class_ids.filter(id => id !== newPrimaryId)
+                    });
+                  }}
                   className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none"
                 >
-                  <option value="">-- Chọn lớp --</option>
+                  <option value="">-- Chọn lớp chính --</option>
                   {classes.map((classItem) => (
                     <option key={classItem.id} value={classItem.id}>
                       {classItem.name} ({classItem.subject})
                     </option>
                   ))}
                 </select>
+                <p className="text-xs text-gray-500 mt-1">
+                  Lớp chính sẽ xuất hiện trong quản lý học phí
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  Lớp phụ (tùy chọn)
+                </label>
+                <div className="border-2 border-gray-300 rounded-lg p-3 max-h-48 overflow-y-auto bg-gray-50">
+                  {classes
+                    .filter(c => c.id !== formData.primary_class_id) // Don't show primary class
+                    .map((classItem) => (
+                      <label
+                        key={classItem.id}
+                        className="flex items-center gap-2 p-2 hover:bg-white rounded cursor-pointer transition-colors"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={formData.secondary_class_ids.includes(classItem.id)}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setFormData({
+                                ...formData,
+                                secondary_class_ids: [...formData.secondary_class_ids, classItem.id]
+                              });
+                            } else {
+                              setFormData({
+                                ...formData,
+                                secondary_class_ids: formData.secondary_class_ids.filter(id => id !== classItem.id)
+                              });
+                            }
+                          }}
+                          className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                        />
+                        <span className="text-sm text-gray-700">
+                          {classItem.name} ({classItem.subject})
+                        </span>
+                      </label>
+                    ))}
+                  {classes.filter(c => c.id !== formData.primary_class_id).length === 0 && (
+                    <p className="text-sm text-gray-500 text-center py-4">
+                      {formData.primary_class_id ? 'Không có lớp phụ khả dụng' : 'Vui lòng chọn lớp chính trước'}
+                    </p>
+                  )}
+                </div>
+                <p className="text-xs text-gray-500 mt-1">
+                  Học sinh sẽ xuất hiện trong điểm danh của tất cả lớp được chọn
+                </p>
               </div>
 
               <div>
