@@ -548,7 +548,7 @@ export default function PaymentsPage() {
                   required
                   value={paymentForm.paidDate}
                   onChange={(e) => setPaymentForm({ ...paymentForm, paidDate: e.target.value })}
-                  className="w-full px-3 lg:px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none text-sm lg:text-base"
+                  className="w-full max-w-full min-w-0 px-3 lg:px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none text-sm lg:text-base"
                 />
               </div>
 
