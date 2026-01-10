@@ -21,6 +21,7 @@ export default function PaymentsPage() {
   const [selectedClassId, setSelectedClassId] = useState<string>('');
   const [selectedMonth, setSelectedMonth] = useState<string>(format(new Date(), 'yyyy-MM'));
   const [paymentRecords, setPaymentRecords] = useState<PaymentRecord[]>([]);
+  const [filterStatus, setFilterStatus] = useState<'all' | 'paid' | 'unpaid'>('all');
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [showModal, setShowModal] = useState(false);
@@ -307,6 +308,11 @@ export default function PaymentsPage() {
     }
   }
 
+  // Filter records based on status
+  const filteredRecords = filterStatus === 'all'
+    ? paymentRecords
+    : paymentRecords.filter(r => r.status === filterStatus);
+
   const stats = {
     total: paymentRecords.length,
     paid: paymentRecords.filter(r => r.status === 'paid').length,
@@ -362,22 +368,58 @@ export default function PaymentsPage() {
 
         {/* Stats */}
         {paymentRecords.length > 0 && (
-          <div className="grid grid-cols-3 gap-2 lg:gap-4 pt-4 border-t">
-            <div className="bg-blue-50 p-2 lg:p-4 rounded-lg">
-              <p className="text-xs lg:text-sm text-gray-600 mb-1">Tổng số HS</p>
-              <p className="text-xl lg:text-2xl font-bold text-blue-600">{stats.total}</p>
+          <>
+            <div className="grid grid-cols-3 gap-2 lg:gap-4 pt-4 border-t">
+              <div className="bg-blue-50 p-2 lg:p-4 rounded-lg">
+                <p className="text-xs lg:text-sm text-gray-600 mb-1">Tổng số HS</p>
+                <p className="text-xl lg:text-2xl font-bold text-blue-600">{stats.total}</p>
+              </div>
+              <div className="bg-green-50 p-2 lg:p-4 rounded-lg">
+                <p className="text-xs lg:text-sm text-gray-600 mb-1">Đã đóng</p>
+                <p className="text-xl lg:text-2xl font-bold text-green-600">{stats.paid}</p>
+                <p className="text-xs text-gray-600 mt-1 hidden lg:block">{stats.paidAmount.toLocaleString('vi-VN')} đ</p>
+              </div>
+              <div className="bg-red-50 p-2 lg:p-4 rounded-lg">
+                <p className="text-xs lg:text-sm text-gray-600 mb-1">Chưa đóng</p>
+                <p className="text-xl lg:text-2xl font-bold text-red-600">{stats.unpaid}</p>
+                <p className="text-xs text-gray-600 mt-1 hidden lg:block">{stats.unpaidAmount.toLocaleString('vi-VN')} đ</p>
+              </div>
             </div>
-            <div className="bg-green-50 p-2 lg:p-4 rounded-lg">
-              <p className="text-xs lg:text-sm text-gray-600 mb-1">Đã đóng</p>
-              <p className="text-xl lg:text-2xl font-bold text-green-600">{stats.paid}</p>
-              <p className="text-xs text-gray-600 mt-1 hidden lg:block">{stats.paidAmount.toLocaleString('vi-VN')} đ</p>
+
+            {/* Filter Buttons */}
+            <div className="flex gap-2 pt-4">
+              <button
+                onClick={() => setFilterStatus('all')}
+                className={`flex-1 px-3 lg:px-4 py-2 rounded-lg font-semibold text-sm lg:text-base transition-colors ${
+                  filterStatus === 'all'
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+              >
+                Tất cả ({stats.total})
+              </button>
+              <button
+                onClick={() => setFilterStatus('paid')}
+                className={`flex-1 px-3 lg:px-4 py-2 rounded-lg font-semibold text-sm lg:text-base transition-colors ${
+                  filterStatus === 'paid'
+                    ? 'bg-green-600 text-white'
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+              >
+                Đã đóng ({stats.paid})
+              </button>
+              <button
+                onClick={() => setFilterStatus('unpaid')}
+                className={`flex-1 px-3 lg:px-4 py-2 rounded-lg font-semibold text-sm lg:text-base transition-colors ${
+                  filterStatus === 'unpaid'
+                    ? 'bg-red-600 text-white'
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+              >
+                Chưa đóng ({stats.unpaid})
+              </button>
             </div>
-            <div className="bg-red-50 p-2 lg:p-4 rounded-lg">
-              <p className="text-xs lg:text-sm text-gray-600 mb-1">Chưa đóng</p>
-              <p className="text-xl lg:text-2xl font-bold text-red-600">{stats.unpaid}</p>
-              <p className="text-xs text-gray-600 mt-1 hidden lg:block">{stats.unpaidAmount.toLocaleString('vi-VN')} đ</p>
-            </div>
-          </div>
+          </>
         )}
       </div>
 
@@ -412,7 +454,7 @@ export default function PaymentsPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200">
-                {paymentRecords.map((record, index) => (
+                {filteredRecords.map((record, index) => (
                   <tr key={record.studentId} className="hover:bg-gray-50 transition-colors">
                     <td className="px-6 py-4 text-gray-600">{index + 1}</td>
                     <td className="px-6 py-4 font-semibold text-gray-800">{record.studentName}</td>
@@ -488,7 +530,7 @@ export default function PaymentsPage() {
 
           {/* Mobile Card View */}
           <div className="lg:hidden space-y-3">
-            {paymentRecords.map((record, index) => (
+            {filteredRecords.map((record, index) => (
               <div
                 key={record.studentId}
                 onClick={() => record.status === 'unpaid' && openPaymentModal(record.studentId)}
