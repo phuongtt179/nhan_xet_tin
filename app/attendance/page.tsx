@@ -1,28 +1,38 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { supabase, Student, Class, Attendance } from '@/lib/supabase';
-import { Save } from 'lucide-react';
+import { supabase } from '@/lib/supabase';
+import { Class } from '@/lib/types';
+import { Save, ChevronDown, ChevronUp } from 'lucide-react';
 import { format } from 'date-fns';
 
 interface AttendanceRecord {
   studentId: string;
   studentName: string;
+  computerName: string | null;
   isAbsent: boolean; // true = vắng, false = có mặt
   note: string;
 }
 
 export default function AttendancePage() {
   const [classes, setClasses] = useState<Class[]>([]);
+  const [schoolYears, setSchoolYears] = useState<string[]>([]);
+  const [selectedYear, setSelectedYear] = useState<string>('2025-2026');
   const [selectedClassId, setSelectedClassId] = useState<string>('');
   const [selectedDate, setSelectedDate] = useState<string>(format(new Date(), 'yyyy-MM-dd'));
   const [attendanceRecords, setAttendanceRecords] = useState<AttendanceRecord[]>([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [isControlsCollapsed, setIsControlsCollapsed] = useState(false);
+
+  useEffect(() => {
+    loadSchoolYears();
+  }, []);
 
   useEffect(() => {
     loadClasses();
-  }, []);
+    setSelectedClassId(''); // Reset class when year changes
+  }, [selectedYear]);
 
   useEffect(() => {
     if (selectedClassId && selectedDate) {
@@ -30,16 +40,43 @@ export default function AttendancePage() {
     }
   }, [selectedClassId, selectedDate]);
 
+  async function loadSchoolYears() {
+    try {
+      const { data, error } = await supabase
+        .from('classes')
+        .select('school_year')
+        .order('school_year', { ascending: false });
+
+      if (error) throw error;
+
+      const uniqueYears = Array.from(new Set(data?.map(c => c.school_year) || []));
+      setSchoolYears(uniqueYears);
+
+      if (uniqueYears.length > 0 && !selectedYear) {
+        setSelectedYear(uniqueYears[0]);
+      }
+    } catch (error) {
+      console.error('Error loading school years:', error);
+    }
+  }
+
   async function loadClasses() {
     try {
       const { data, error } = await supabase
         .from('classes')
-        .select('*')
+        .select(`
+          *,
+          grades (
+            id,
+            name
+          )
+        `)
+        .eq('school_year', selectedYear)
         .order('name');
 
       if (error) throw error;
       setClasses(data || []);
-      if (data && data.length > 0) {
+      if (data && data.length > 0 && !selectedClassId) {
         setSelectedClassId(data[0].id);
       }
     } catch (error) {
@@ -51,20 +88,14 @@ export default function AttendancePage() {
     try {
       setLoading(true);
 
-      // Get students enrolled in this class (primary OR secondary)
-      const { data: studentClassesData, error: scError } = await supabase
-        .from('student_classes')
-        .select(`
-          student_id,
-          is_primary,
-          students (
-            id,
-            name
-          )
-        `)
-        .eq('class_id', selectedClassId);
+      // Get students in this class
+      const { data: studentsData, error: studentsError } = await supabase
+        .from('students')
+        .select('id, name, computer_name')
+        .eq('class_id', selectedClassId)
+        .order('computer_name', { ascending: true, nullsFirst: false });
 
-      if (scError) throw scError;
+      if (studentsError) throw studentsError;
 
       // Get existing attendance records for this date
       const { data: existingAttendance, error: attendanceError } = await supabase
@@ -76,12 +107,12 @@ export default function AttendancePage() {
       if (attendanceError) throw attendanceError;
 
       // Create attendance records array
-      const records: AttendanceRecord[] = (studentClassesData || []).map((sc: any) => {
-        const student = sc.students;
+      const records: AttendanceRecord[] = (studentsData || []).map((student) => {
         const existing = existingAttendance?.find(a => a.student_id === student.id);
         return {
           studentId: student.id,
           studentName: student.name,
+          computerName: student.computer_name,
           isAbsent: existing?.status === 'absent', // true nếu vắng, false nếu có mặt
           note: existing?.note || '',
         };
@@ -166,15 +197,50 @@ export default function AttendancePage() {
   };
 
   return (
-    <div className="p-4 lg:p-8">
+    <div className="p-4 lg:p-8 pb-24 lg:pb-24">
       <div className="mb-4 lg:mb-6">
         <h1 className="text-2xl lg:text-3xl font-bold text-gray-800">Điểm danh</h1>
         <p className="text-sm lg:text-base text-gray-600 mt-1">Điểm danh học sinh theo buổi học</p>
       </div>
 
       {/* Controls */}
-      <div className="bg-white p-4 lg:p-6 rounded-lg shadow mb-4 lg:mb-6 space-y-4">
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+      <div className="bg-white rounded-lg shadow mb-4 lg:mb-6">
+        {/* Header - clickable */}
+        <div
+          onClick={() => setIsControlsCollapsed(!isControlsCollapsed)}
+          className="flex items-center justify-between p-4 lg:p-6 cursor-pointer hover:bg-gray-50 transition-colors border-b border-gray-200"
+        >
+          <div className="flex items-center gap-2">
+            <h2 className="text-base lg:text-lg font-bold text-gray-800">Thông tin điểm danh</h2>
+            {isControlsCollapsed && (
+              <span className="text-sm text-gray-600">
+                {classes.find(c => c.id === selectedClassId)?.name || 'Chưa chọn'} - {format(new Date(selectedDate), 'dd/MM/yyyy')}
+              </span>
+            )}
+          </div>
+          {isControlsCollapsed ? <ChevronDown size={24} /> : <ChevronUp size={24} />}
+        </div>
+
+        {/* Content - collapsible */}
+        {!isControlsCollapsed && (
+          <div className="p-4 lg:p-6 space-y-4">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  Năm học <span className="text-red-500">*</span>
+                </label>
+                <select
+                  value={selectedYear}
+                  onChange={(e) => setSelectedYear(e.target.value)}
+                  className="w-full px-3 lg:px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none text-sm lg:text-base"
+                >
+                  {schoolYears.map((year) => (
+                    <option key={year} value={year}>
+                      {year}
+                    </option>
+                  ))}
+                </select>
+              </div>
           <div>
             <label className="block text-sm font-semibold text-gray-700 mb-2">
               Lớp <span className="text-red-500">*</span>
@@ -189,7 +255,7 @@ export default function AttendancePage() {
               ) : (
                 classes.map((classItem) => (
                   <option key={classItem.id} value={classItem.id}>
-                    {classItem.name} - {classItem.subject}
+                    {(classItem as any).grades?.name} - {classItem.name}
                   </option>
                 ))
               )}
@@ -207,18 +273,9 @@ export default function AttendancePage() {
               className="w-full max-w-full min-w-0 px-3 lg:px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none text-sm lg:text-base"
             />
           </div>
-
-          <div className="flex items-end">
-            <button
-              onClick={handleSave}
-              disabled={saving || !selectedClassId || attendanceRecords.length === 0}
-              className="w-full flex items-center justify-center gap-2 px-4 lg:px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-semibold disabled:bg-gray-300 disabled:cursor-not-allowed text-sm lg:text-base"
-            >
-              <Save size={18} className="lg:w-5 lg:h-5" />
-              {saving ? 'Đang lưu...' : 'Lưu điểm danh'}
-            </button>
+            </div>
           </div>
-        </div>
+        )}
       </div>
 
       {/* Stats Table */}
@@ -269,6 +326,7 @@ export default function AttendancePage() {
             <thead className="bg-gray-50 border-b-2 border-gray-200">
               <tr>
                 <th className="px-2 lg:px-6 py-3 lg:py-4 text-left text-xs lg:text-sm font-bold text-gray-700">Họ và tên</th>
+                <th className="px-2 lg:px-6 py-3 lg:py-4 text-center text-xs lg:text-sm font-bold text-gray-700 w-16 lg:w-24">Tên máy</th>
                 <th className="px-2 lg:px-6 py-3 lg:py-4 text-center text-xs lg:text-sm font-bold text-gray-700 w-20 lg:w-32">Vắng</th>
               </tr>
             </thead>
@@ -283,6 +341,13 @@ export default function AttendancePage() {
                     {index + 1}. {record.studentName}
                   </td>
                   <td className="px-2 lg:px-6 py-3 lg:py-4 text-center">
+                    {record.computerName ? (
+                      <span className="text-xs lg:text-sm font-semibold text-gray-700">{record.computerName}</span>
+                    ) : (
+                      <span className="text-gray-400 text-xs">-</span>
+                    )}
+                  </td>
+                  <td className="px-2 lg:px-6 py-3 lg:py-4 text-center">
                     <input
                       type="checkbox"
                       checked={record.isAbsent}
@@ -294,6 +359,22 @@ export default function AttendancePage() {
               ))}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {/* Fixed Save Button - floating at bottom */}
+      {selectedClassId && attendanceRecords.length > 0 && (
+        <div className="fixed bottom-16 lg:bottom-0 left-0 right-0 lg:left-64 bg-white border-t-2 border-gray-200 shadow-lg p-4 z-20">
+          <div className="max-w-7xl mx-auto flex justify-center lg:justify-start">
+            <button
+              onClick={handleSave}
+              disabled={saving}
+              className="w-full lg:w-auto flex items-center justify-center gap-2 px-8 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-semibold disabled:bg-gray-300 disabled:cursor-not-allowed shadow-md"
+            >
+              <Save size={20} />
+              {saving ? 'Đang lưu...' : 'Lưu điểm danh'}
+            </button>
+          </div>
         </div>
       )}
     </div>

@@ -1,38 +1,95 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { supabase, Student, Class, StudentWithClasses } from '@/lib/supabase';
-import { Plus, Edit2, Trash2, X, Filter } from 'lucide-react';
+import { supabase } from '@/lib/supabase';
+import { Student, Class, COMPUTER_NAMES } from '@/lib/types';
+import { Users, Plus, Edit2, Trash2, Upload } from 'lucide-react';
+
+interface BulkStudent {
+  name: string;
+  computer_name: string;
+}
 
 export default function StudentsPage() {
-  const [students, setStudents] = useState<StudentWithClasses[]>([]);
+  const [students, setStudents] = useState<Student[]>([]);
   const [classes, setClasses] = useState<Class[]>([]);
+  const [allClasses, setAllClasses] = useState<Class[]>([]); // All classes without filter
+  const [schoolYears, setSchoolYears] = useState<string[]>([]);
+  const [selectedYear, setSelectedYear] = useState<string>('2025-2026');
   const [loading, setLoading] = useState(true);
-  const [showModal, setShowModal] = useState(false);
-  const [editingStudent, setEditingStudent] = useState<StudentWithClasses | null>(null);
-  const [filterClassId, setFilterClassId] = useState<string>('all');
+  const [showForm, setShowForm] = useState(false);
+  const [showBulkImport, setShowBulkImport] = useState(false);
+  const [editingStudent, setEditingStudent] = useState<Student | null>(null);
+  const [filterClassId, setFilterClassId] = useState<string>(''); // '' = all classes
   const [formData, setFormData] = useState({
     name: '',
+    computer_name: '',
     phone: '',
     parent_phone: '',
-    note: '',
-    primary_class_id: '',
-    secondary_class_ids: [] as string[],
+    class_id: '',
   });
+  const [bulkText, setBulkText] = useState('');
+  const [bulkPreview, setBulkPreview] = useState<BulkStudent[]>([]);
+  const [bulkClassId, setBulkClassId] = useState('');
 
   useEffect(() => {
-    loadData();
+    loadSchoolYears();
+    loadStudents();
   }, []);
 
-  async function loadData() {
-    await Promise.all([loadClasses(), loadStudents()]);
+  useEffect(() => {
+    loadClasses();
+    setFilterClassId(''); // Reset class filter when year changes
+  }, [selectedYear]);
+
+  async function loadSchoolYears() {
+    try {
+      const { data, error } = await supabase
+        .from('classes')
+        .select('school_year')
+        .order('school_year', { ascending: false });
+
+      if (error) throw error;
+
+      const uniqueYears = Array.from(new Set(data?.map(c => c.school_year) || []));
+      setSchoolYears(uniqueYears);
+
+      if (uniqueYears.length > 0 && !selectedYear) {
+        setSelectedYear(uniqueYears[0]);
+      }
+    } catch (error) {
+      console.error('Error loading school years:', error);
+    }
   }
 
   async function loadClasses() {
     try {
+      // Load all classes (for forms)
+      const { data: allData, error: allError } = await supabase
+        .from('classes')
+        .select(`
+          *,
+          grades (
+            id,
+            name
+          )
+        `)
+        .order('name');
+
+      if (allError) throw allError;
+      setAllClasses(allData || []);
+
+      // Load classes filtered by year (for display)
       const { data, error } = await supabase
         .from('classes')
-        .select('*')
+        .select(`
+          *,
+          grades (
+            id,
+            name
+          )
+        `)
+        .eq('school_year', selectedYear)
         .order('name');
 
       if (error) throw error;
@@ -45,53 +102,26 @@ export default function StudentsPage() {
   async function loadStudents() {
     try {
       setLoading(true);
-
-      // Load all students
-      const { data: studentsData, error: studentsError } = await supabase
+      const { data, error } = await supabase
         .from('students')
-        .select('*')
-        .order('name');
-
-      if (studentsError) throw studentsError;
-
-      // Load student-class relationships with class info
-      const { data: studentClassesData, error: scError } = await supabase
-        .from('student_classes')
         .select(`
-          student_id,
-          class_id,
-          is_primary,
+          *,
           classes (
             id,
             name,
-            subject
+            grades (
+              id,
+              name
+            )
           )
-        `);
+        `)
+        .order('computer_name', { ascending: true, nullsFirst: false });
 
-      if (scError) throw scError;
-
-      // Merge data: each student gets primary_class + secondary_classes arrays
-      const studentsWithClasses = (studentsData || []).map((student: any) => {
-        const studentClasses = (studentClassesData || []).filter(
-          (sc: any) => sc.student_id === student.id
-        );
-        const primaryClass = studentClasses.find((sc: any) => sc.is_primary);
-        const secondaryClasses = studentClasses.filter((sc: any) => !sc.is_primary);
-
-        return {
-          ...student,
-          primary_class: primaryClass?.classes,
-          secondary_classes: secondaryClasses.map((sc: any) => sc.classes),
-          class_count: studentClasses.length,
-          class_name: (primaryClass?.classes as any)?.name || 'N/A', // Backward compat
-          class_id: primaryClass?.class_id || '', // Backward compat
-        };
-      });
-
-      setStudents(studentsWithClasses);
+      if (error) throw error;
+      setStudents(data || []);
     } catch (error) {
       console.error('Error loading students:', error);
-      alert('Lỗi khi tải danh sách học sinh');
+      alert('Không thể tải danh sách học sinh');
     } finally {
       setLoading(false);
     }
@@ -101,95 +131,48 @@ export default function StudentsPage() {
     e.preventDefault();
 
     try {
-      // Warn if changing primary class
-      if (editingStudent && editingStudent.class_id &&
-          editingStudent.class_id !== formData.primary_class_id) {
-        const confirmed = confirm(
-          'Bạn đang thay đổi lớp chính. Học phí cũ sẽ được giữ nguyên ở lớp cũ, ' +
-          'học phí mới sẽ tạo ở lớp mới. Tiếp tục?'
-        );
-        if (!confirmed) return;
-      }
-
-      let studentId: string;
+      const studentData = {
+        name: formData.name,
+        computer_name: formData.computer_name || null,
+        phone: formData.phone || null,
+        parent_phone: formData.parent_phone || null,
+        class_id: formData.class_id || null,
+      };
 
       if (editingStudent) {
-        // UPDATE student info (not class_id - handled below via student_classes)
-        const { error: updateError } = await supabase
+        // Update
+        const { error } = await supabase
           .from('students')
           .update({
-            name: formData.name,
-            phone: formData.phone,
-            parent_phone: formData.parent_phone,
-            note: formData.note,
+            ...studentData,
+            updated_at: new Date().toISOString(),
           })
           .eq('id', editingStudent.id);
 
-        if (updateError) throw updateError;
-        studentId = editingStudent.id;
+        if (error) throw error;
+        alert('Cập nhật học sinh thành công!');
       } else {
-        // CREATE student (without class_id - handled below)
-        const { data: newStudent, error: insertError } = await supabase
+        // Insert
+        const { error } = await supabase
           .from('students')
-          .insert([{
-            name: formData.name,
-            phone: formData.phone,
-            parent_phone: formData.parent_phone,
-            note: formData.note,
-          }])
-          .select()
-          .single();
+          .insert([studentData]);
 
-        if (insertError) throw insertError;
-        studentId = newStudent.id;
+        if (error) throw error;
+        alert('Thêm học sinh thành công!');
       }
 
-      // DELETE old student_classes relationships
-      await supabase
-        .from('student_classes')
-        .delete()
-        .eq('student_id', studentId);
-
-      // INSERT new relationships
-      const classRelationships = [];
-
-      // Primary class
-      if (formData.primary_class_id) {
-        classRelationships.push({
-          student_id: studentId,
-          class_id: formData.primary_class_id,
-          is_primary: true,
-        });
-      }
-
-      // Secondary classes
-      formData.secondary_class_ids.forEach(classId => {
-        classRelationships.push({
-          student_id: studentId,
-          class_id: classId,
-          is_primary: false,
-        });
-      });
-
-      if (classRelationships.length > 0) {
-        const { error: scError } = await supabase
-          .from('student_classes')
-          .insert(classRelationships);
-
-        if (scError) throw scError;
-      }
-
-      alert(editingStudent ? 'Cập nhật học sinh thành công!' : 'Thêm học sinh thành công!');
-      closeModal();
+      setShowForm(false);
+      setEditingStudent(null);
+      setFormData({ name: '', computer_name: '', phone: '', parent_phone: '', class_id: '' });
       loadStudents();
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error saving student:', error);
-      alert('Lỗi khi lưu học sinh');
+      alert(error.message || 'Có lỗi xảy ra');
     }
   }
 
-  async function handleDelete(studentId: string, studentName: string) {
-    if (!confirm(`Bạn có chắc muốn xóa học sinh "${studentName}"?\nLưu ý: Tất cả điểm danh và học phí liên quan sẽ bị xóa.`)) {
+  async function handleDelete(student: Student) {
+    if (!confirm(`Bạn có chắc muốn xóa học sinh "${student.name}"?`)) {
       return;
     }
 
@@ -197,96 +180,201 @@ export default function StudentsPage() {
       const { error } = await supabase
         .from('students')
         .delete()
-        .eq('id', studentId);
+        .eq('id', student.id);
 
       if (error) throw error;
       alert('Xóa học sinh thành công!');
       loadStudents();
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error deleting student:', error);
-      alert('Lỗi khi xóa học sinh');
+      alert(error.message || 'Không thể xóa học sinh');
     }
   }
 
-  function openAddModal() {
-    setEditingStudent(null);
-    setFormData({
-      name: '',
-      phone: '',
-      parent_phone: '',
-      note: '',
-      primary_class_id: '',
-      secondary_class_ids: [],
-    });
-    setShowModal(true);
-  }
-
-  function openEditModal(student: StudentWithClasses) {
+  function openEditForm(student: Student) {
     setEditingStudent(student);
     setFormData({
       name: student.name,
-      phone: student.phone,
-      parent_phone: student.parent_phone,
-      note: student.note,
-      primary_class_id: student.class_id || '',
-      secondary_class_ids: student.secondary_classes?.map(c => c.id) || [],
+      computer_name: student.computer_name || '',
+      phone: student.phone || '',
+      parent_phone: student.parent_phone || '',
+      class_id: student.class_id || '',
     });
-    setShowModal(true);
+    setShowForm(true);
   }
 
-  function closeModal() {
-    setShowModal(false);
+  function closeForm() {
+    setShowForm(false);
     setEditingStudent(null);
-    setFormData({
-      name: '',
-      phone: '',
-      parent_phone: '',
-      note: '',
-      primary_class_id: '',
-      secondary_class_ids: [],
-    });
+    setFormData({ name: '', computer_name: '', phone: '', parent_phone: '', class_id: '' });
   }
 
-  const filteredStudents = filterClassId === 'all'
-    ? students
-    : students.filter(s => s.class_id === filterClassId);
+  function parseBulkText(text: string): BulkStudent[] {
+    const lines = text.trim().split('\n').filter(line => line.trim());
+    const parsed: BulkStudent[] = [];
+
+    for (const line of lines) {
+      // Try to split by tab first, then by multiple spaces
+      let parts = line.split('\t');
+      if (parts.length < 2) {
+        parts = line.split(/\s{2,}/); // Split by 2+ spaces
+      }
+
+      if (parts.length >= 2) {
+        parsed.push({
+          name: parts[0].trim(),
+          computer_name: parts[1].trim(),
+        });
+      }
+    }
+
+    return parsed;
+  }
+
+  function handleBulkTextChange(text: string) {
+    setBulkText(text);
+    const preview = parseBulkText(text);
+    setBulkPreview(preview);
+  }
+
+  async function handleBulkImport() {
+    if (bulkPreview.length === 0) {
+      alert('Không có dữ liệu để thêm');
+      return;
+    }
+
+    if (!bulkClassId) {
+      alert('Vui lòng chọn lớp');
+      return;
+    }
+
+    try {
+      const studentsToAdd = bulkPreview.map(s => ({
+        name: s.name,
+        computer_name: s.computer_name || null,
+        class_id: bulkClassId,
+        phone: null,
+        parent_phone: null,
+      }));
+
+      const { error } = await supabase
+        .from('students')
+        .insert(studentsToAdd);
+
+      if (error) throw error;
+
+      alert(`Đã thêm ${bulkPreview.length} học sinh thành công!`);
+      setShowBulkImport(false);
+      setBulkText('');
+      setBulkPreview([]);
+      setBulkClassId('');
+      loadStudents();
+    } catch (error: any) {
+      console.error('Error bulk importing:', error);
+      alert(error.message || 'Có lỗi xảy ra khi thêm hàng loạt');
+    }
+  }
+
+  function closeBulkImport() {
+    setShowBulkImport(false);
+    setBulkText('');
+    setBulkPreview([]);
+    setBulkClassId('');
+  }
+
+  // Get available computer names (excluding already used ones in the SAME CLASS)
+  const getAvailableComputerNames = (classId: string) => {
+    if (!classId) return COMPUTER_NAMES;
+
+    const usedInClass = students
+      .filter(s =>
+        s.class_id === classId &&
+        s.computer_name &&
+        (!editingStudent || s.id !== editingStudent.id)
+      )
+      .map(s => s.computer_name);
+
+    return COMPUTER_NAMES.filter(name => !usedInClass.includes(name));
+  };
+
+  const availableComputerNames = getAvailableComputerNames(formData.class_id);
+
+  // Filter students by class
+  const filteredStudents = filterClassId
+    ? students.filter(s => s.class_id === filterClassId)
+    : students;
 
   return (
-    <div className="p-4 lg:p-8">
-      {/* Header - Mobile: 3 rows, Desktop: 1 row */}
-      <div className="mb-6 space-y-3 lg:space-y-0">
-        <h1 className="text-2xl lg:text-3xl font-bold text-gray-800">Quản lý Học sinh</h1>
-        <p className="text-sm lg:text-base text-gray-600">Danh sách học sinh các lớp</p>
-        <button
-          onClick={openAddModal}
-          className="w-full lg:w-auto flex items-center justify-center gap-2 px-4 lg:px-6 py-2 lg:py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-semibold shadow-lg hover:shadow-xl text-sm lg:text-base"
-        >
-          <Plus size={18} />
-          Thêm học sinh
-        </button>
+    <div className="p-4 lg:p-8 pb-20 lg:pb-8">
+      <div className="mb-6 lg:mb-8 flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl lg:text-3xl font-bold text-gray-800 flex items-center gap-2">
+            <Users className="text-blue-600" />
+            Quản lý Học sinh
+          </h1>
+          <p className="text-sm lg:text-base text-gray-600 mt-1">
+            Danh sách học sinh và tên máy
+          </p>
+        </div>
+        <div className="flex gap-2">
+          <button
+            onClick={() => setShowBulkImport(true)}
+            className="bg-green-600 hover:bg-green-700 text-white px-3 lg:px-4 py-2 rounded-lg font-semibold flex items-center gap-2 transition-colors text-sm lg:text-base"
+          >
+            <Upload size={20} />
+            <span className="hidden lg:inline">Import</span>
+          </button>
+          <button
+            onClick={() => setShowForm(true)}
+            className="bg-blue-600 hover:bg-blue-700 text-white px-3 lg:px-4 py-2 rounded-lg font-semibold flex items-center gap-2 transition-colors text-sm lg:text-base"
+          >
+            <Plus size={20} />
+            <span className="hidden lg:inline">Thêm</span>
+          </button>
+        </div>
       </div>
 
-      {/* Filter - Mobile: 3 rows, Desktop: 1 row */}
-      <div className="mb-6 bg-white p-3 lg:p-4 rounded-lg shadow space-y-3 lg:space-y-0 lg:flex lg:items-center lg:gap-3">
-        <div className="flex items-center gap-2 lg:gap-3">
-          <Filter size={18} className="text-gray-600" />
-          <label className="text-sm lg:text-base font-semibold text-gray-700">Lọc theo lớp:</label>
+      {/* Filter */}
+      <div className="bg-white rounded-lg lg:rounded-xl shadow-md p-4 lg:p-6 mb-4 lg:mb-6">
+        <div className="grid lg:grid-cols-2 gap-4">
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-2">
+              Năm học:
+            </label>
+            <select
+              value={selectedYear}
+              onChange={(e) => setSelectedYear(e.target.value)}
+              className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none"
+            >
+              {schoolYears.map((year) => (
+                <option key={year} value={year}>
+                  {year}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-2 flex items-center gap-2">
+              <Users size={18} />
+              Lọc theo lớp:
+            </label>
+            <select
+              value={filterClassId}
+              onChange={(e) => setFilterClassId(e.target.value)}
+              className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none"
+            >
+              <option value="">Tất cả lớp</option>
+              {classes.map((classItem) => (
+                <option key={classItem.id} value={classItem.id}>
+                  {classItem.grades?.name} - {classItem.name}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
-        <select
-          value={filterClassId}
-          onChange={(e) => setFilterClassId(e.target.value)}
-          className="w-full lg:w-auto px-3 lg:px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none text-sm lg:text-base"
-        >
-          <option value="all">Tất cả lớp</option>
-          {classes.map((classItem) => (
-            <option key={classItem.id} value={classItem.id}>
-              {classItem.name}
-            </option>
-          ))}
-        </select>
-        <span className="block lg:ml-auto text-gray-600 font-semibold text-sm lg:text-base">
-          Tổng: {filteredStudents.length} học sinh
-        </span>
+        <p className="text-sm text-gray-600 mt-4">
+          Tổng: <span className="font-bold text-gray-800">{filteredStudents.length}</span> học sinh
+        </p>
       </div>
 
       {loading ? (
@@ -294,64 +382,63 @@ export default function StudentsPage() {
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
         </div>
       ) : filteredStudents.length === 0 ? (
-        <div className="text-center py-12 bg-white rounded-lg shadow">
-          <p className="text-gray-500 text-lg">Chưa có học sinh nào</p>
-          <p className="text-gray-400 mt-2">Nhấn "Thêm học sinh" để bắt đầu</p>
+        <div className="bg-yellow-50 border-2 border-yellow-200 rounded-xl p-6 text-center">
+          <Users className="mx-auto text-yellow-400 mb-3" size={48} />
+          <p className="text-yellow-800 font-semibold mb-2">
+            {filterClassId ? 'Lớp này chưa có học sinh' : 'Chưa có học sinh nào'}
+          </p>
+          <p className="text-sm text-yellow-700">
+            Nhấn nút &quot;Thêm&quot; hoặc &quot;Import&quot; để thêm học sinh
+          </p>
         </div>
       ) : (
-        <div className="bg-white rounded-lg shadow overflow-x-auto">
+        <div className="bg-white rounded-lg lg:rounded-xl shadow-md overflow-x-auto">
           <table className="w-full">
             <thead className="bg-gray-50 border-b-2 border-gray-200">
               <tr>
-                <th className="px-2 lg:px-6 py-3 lg:py-4 text-left text-xs lg:text-sm font-bold text-gray-700">Họ tên</th>
-                <th className="px-2 lg:px-6 py-3 lg:py-4 text-left text-xs lg:text-sm font-bold text-gray-700">Lớp</th>
-                <th className="px-6 py-4 text-left text-sm font-bold text-gray-700 hidden lg:table-cell">SĐT học sinh</th>
-                <th className="px-6 py-4 text-left text-sm font-bold text-gray-700 hidden lg:table-cell">SĐT phụ huynh</th>
-                <th className="px-2 lg:px-6 py-3 lg:py-4 text-left text-xs lg:text-sm font-bold text-gray-700 hidden lg:table-cell">Ghi chú</th>
-                <th className="px-2 lg:px-6 py-3 lg:py-4 text-center text-xs lg:text-sm font-bold text-gray-700">Thao tác</th>
+                <th className="px-3 lg:px-6 py-2 lg:py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Họ và tên</th>
+                <th className="px-3 lg:px-6 py-2 lg:py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Máy</th>
+                <th className="px-3 lg:px-6 py-2 lg:py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Lớp</th>
+                <th className="px-3 lg:px-6 py-2 lg:py-3 text-center text-xs font-bold text-gray-700 uppercase tracking-wider">Thao tác</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200">
-              {filteredStudents.map((student) => (
+              {filteredStudents.map((student, index) => (
                 <tr key={student.id} className="hover:bg-gray-50 transition-colors">
-                  <td className="px-2 lg:px-6 py-3 lg:py-4 font-semibold text-gray-800 text-xs lg:text-base whitespace-nowrap">{student.name}</td>
-                  <td className="px-2 lg:px-6 py-3 lg:py-4">
-                    <div className="flex flex-wrap gap-1">
-                      {student.primary_class && (
-                        <span className="px-2 lg:px-3 py-1 bg-blue-600 text-white rounded-full text-xs font-semibold whitespace-nowrap">
-                          {student.primary_class.name} (Chính)
-                        </span>
-                      )}
-                      {student.secondary_classes && student.secondary_classes.length > 0 && student.secondary_classes.map((cls: any) => (
-                        <span key={cls.id} className="px-2 lg:px-3 py-1 bg-gray-200 text-gray-700 rounded-full text-xs font-semibold whitespace-nowrap">
-                          {cls.name}
-                        </span>
-                      ))}
-                      {!student.primary_class && (!student.secondary_classes || student.secondary_classes.length === 0) && (
-                        <span className="px-2 lg:px-3 py-1 bg-gray-100 text-gray-500 rounded-full text-xs whitespace-nowrap">
-                          N/A
-                        </span>
-                      )}
-                    </div>
+                  <td className="px-3 lg:px-6 py-3 lg:py-4">
+                    <div className="font-semibold text-gray-800 text-sm lg:text-base">{student.name}</div>
                   </td>
-                  <td className="px-6 py-4 text-gray-600 hidden lg:table-cell">{student.phone || '-'}</td>
-                  <td className="px-6 py-4 text-gray-600 hidden lg:table-cell">{student.parent_phone || '-'}</td>
-                  <td className="px-6 py-4 text-gray-600 max-w-xs truncate hidden lg:table-cell">{student.note || '-'}</td>
-                  <td className="px-2 lg:px-6 py-3 lg:py-4">
-                    <div className="flex justify-center gap-1 lg:gap-2">
+                  <td className="px-3 lg:px-6 py-3 lg:py-4">
+                    {student.computer_name ? (
+                      <span className="text-sm lg:text-base font-semibold text-gray-700">{student.computer_name}</span>
+                    ) : (
+                      <span className="text-gray-400 text-sm">-</span>
+                    )}
+                  </td>
+                  <td className="px-3 lg:px-6 py-3 lg:py-4">
+                    {student.classes ? (
+                      <span className="inline-block px-2 lg:px-3 py-1 bg-blue-600 text-white rounded-full text-xs lg:text-sm font-semibold whitespace-nowrap">
+                        {student.classes.name} ({(student.classes as any).grades?.name})
+                      </span>
+                    ) : (
+                      <span className="text-gray-400 text-sm">-</span>
+                    )}
+                  </td>
+                  <td className="px-3 lg:px-6 py-3 lg:py-4">
+                    <div className="flex items-center justify-center gap-1 lg:gap-2">
                       <button
-                        onClick={() => openEditModal(student)}
+                        onClick={() => openEditForm(student)}
                         className="p-1.5 lg:p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
                         title="Sửa"
                       >
-                        <Edit2 size={16} className="lg:w-[18px] lg:h-[18px]" />
+                        <Edit2 size={16} className="lg:w-5 lg:h-5" />
                       </button>
                       <button
-                        onClick={() => handleDelete(student.id, student.name)}
+                        onClick={() => handleDelete(student)}
                         className="p-1.5 lg:p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
                         title="Xóa"
                       >
-                        <Trash2 size={16} className="lg:w-[18px] lg:h-[18px]" />
+                        <Trash2 size={16} className="lg:w-5 lg:h-5" />
                       </button>
                     </div>
                   </td>
@@ -362,26 +449,17 @@ export default function StudentsPage() {
         </div>
       )}
 
-      {/* Modal */}
-      {showModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full max-h-[90vh] overflow-y-auto">
-            <div className="flex justify-between items-center p-6 border-b">
-              <h2 className="text-2xl font-bold text-gray-800">
-                {editingStudent ? 'Sửa học sinh' : 'Thêm học sinh mới'}
-              </h2>
-              <button
-                onClick={closeModal}
-                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-              >
-                <X size={24} />
-              </button>
-            </div>
-
-            <form onSubmit={handleSubmit} className="p-6 space-y-4">
+      {/* Add/Edit Form Modal */}
+      {showForm && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50 overflow-y-auto">
+          <div className="bg-white rounded-xl shadow-xl max-w-2xl w-full p-6 my-8">
+            <h2 className="text-2xl font-bold text-gray-800 mb-6">
+              {editingStudent ? 'Sửa thông tin học sinh' : 'Thêm học sinh mới'}
+            </h2>
+            <form onSubmit={handleSubmit} className="space-y-4">
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  Họ tên <span className="text-red-500">*</span>
+                  Họ và tên <span className="text-red-500">*</span>
                 </label>
                 <input
                   type="text"
@@ -389,141 +467,205 @@ export default function StudentsPage() {
                   value={formData.name}
                   onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                   className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none"
-                  placeholder="VD: Nguyễn Văn A"
+                  placeholder="Nguyễn Văn A"
                 />
               </div>
 
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  Lớp chính <span className="text-red-500">*</span>
+                  Lớp <span className="text-red-500">*</span>
                 </label>
                 <select
                   required
-                  value={formData.primary_class_id}
-                  onChange={(e) => {
-                    const newPrimaryId = e.target.value;
-                    setFormData({
-                      ...formData,
-                      primary_class_id: newPrimaryId,
-                      // Remove from secondary if selected as primary
-                      secondary_class_ids: formData.secondary_class_ids.filter(id => id !== newPrimaryId)
-                    });
-                  }}
+                  value={formData.class_id}
+                  onChange={(e) => setFormData({ ...formData, class_id: e.target.value })}
                   className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none"
                 >
-                  <option value="">-- Chọn lớp chính --</option>
+                  <option value="">-- Chọn lớp --</option>
                   {classes.map((classItem) => (
                     <option key={classItem.id} value={classItem.id}>
-                      {classItem.name} ({classItem.subject})
+                      {classItem.grades?.name} - {classItem.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  Tên máy
+                </label>
+                <select
+                  value={formData.computer_name}
+                  onChange={(e) => setFormData({ ...formData, computer_name: e.target.value })}
+                  className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none"
+                >
+                  <option value="">-- Chọn tên máy --</option>
+                  {editingStudent && editingStudent.computer_name && (
+                    <option value={editingStudent.computer_name}>{editingStudent.computer_name} (hiện tại)</option>
+                  )}
+                  {availableComputerNames.map((name) => (
+                    <option key={name} value={name}>
+                      {name}
                     </option>
                   ))}
                 </select>
                 <p className="text-xs text-gray-500 mt-1">
-                  Lớp chính sẽ xuất hiện trong quản lý học phí
+                  Còn {availableComputerNames.length} máy khả dụng
                 </p>
               </div>
 
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  Lớp phụ (tùy chọn)
-                </label>
-                <div className="border-2 border-gray-300 rounded-lg p-3 max-h-48 overflow-y-auto bg-gray-50">
-                  {classes
-                    .filter(c => c.id !== formData.primary_class_id) // Don't show primary class
-                    .map((classItem) => (
-                      <label
-                        key={classItem.id}
-                        className="flex items-center gap-2 p-2 hover:bg-white rounded cursor-pointer transition-colors"
-                      >
-                        <input
-                          type="checkbox"
-                          checked={formData.secondary_class_ids.includes(classItem.id)}
-                          onChange={(e) => {
-                            if (e.target.checked) {
-                              setFormData({
-                                ...formData,
-                                secondary_class_ids: [...formData.secondary_class_ids, classItem.id]
-                              });
-                            } else {
-                              setFormData({
-                                ...formData,
-                                secondary_class_ids: formData.secondary_class_ids.filter(id => id !== classItem.id)
-                              });
-                            }
-                          }}
-                          className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                        />
-                        <span className="text-sm text-gray-700">
-                          {classItem.name} ({classItem.subject})
-                        </span>
-                      </label>
-                    ))}
-                  {classes.filter(c => c.id !== formData.primary_class_id).length === 0 && (
-                    <p className="text-sm text-gray-500 text-center py-4">
-                      {formData.primary_class_id ? 'Không có lớp phụ khả dụng' : 'Vui lòng chọn lớp chính trước'}
-                    </p>
-                  )}
-                </div>
-                <p className="text-xs text-gray-500 mt-1">
-                  Học sinh sẽ xuất hiện trong điểm danh của tất cả lớp được chọn
-                </p>
-              </div>
-
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  SĐT học sinh
+                  Số điện thoại học sinh
                 </label>
                 <input
                   type="tel"
                   value={formData.phone}
                   onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
                   className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none"
-                  placeholder="VD: 0912345678"
+                  placeholder="0123456789"
                 />
               </div>
 
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  SĐT phụ huynh
+                  Số điện thoại phụ huynh
                 </label>
                 <input
                   type="tel"
                   value={formData.parent_phone}
                   onChange={(e) => setFormData({ ...formData, parent_phone: e.target.value })}
                   className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none"
-                  placeholder="VD: 0987654321"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  Ghi chú
-                </label>
-                <textarea
-                  value={formData.note}
-                  onChange={(e) => setFormData({ ...formData, note: e.target.value })}
-                  rows={3}
-                  className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none resize-none"
-                  placeholder="Ghi chú về học sinh (tùy chọn)"
+                  placeholder="0987654321"
                 />
               </div>
 
               <div className="flex gap-3 pt-4">
                 <button
                   type="button"
-                  onClick={closeModal}
-                  className="flex-1 px-6 py-3 border-2 border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors font-semibold"
+                  onClick={closeForm}
+                  className="flex-1 px-4 py-2 border-2 border-gray-300 text-gray-700 rounded-lg font-semibold hover:bg-gray-50 transition-colors"
                 >
                   Hủy
                 </button>
                 <button
                   type="submit"
-                  className="flex-1 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-semibold"
+                  className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 transition-colors"
                 >
-                  {editingStudent ? 'Cập nhật' : 'Thêm học sinh'}
+                  {editingStudent ? 'Cập nhật' : 'Thêm'}
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Bulk Import Modal */}
+      {showBulkImport && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50 overflow-y-auto">
+          <div className="bg-white rounded-xl shadow-xl max-w-3xl w-full p-6 my-8">
+            <h2 className="text-xl font-bold text-gray-800 mb-4">
+              Thêm học sinh hàng loạt
+            </h2>
+
+            <div className="space-y-4">
+              {/* Instructions */}
+              <div className="bg-blue-50 p-4 rounded-lg">
+                <h3 className="font-semibold text-blue-900 mb-2">Hướng dẫn:</h3>
+                <ol className="text-sm text-blue-800 space-y-1 list-decimal list-inside">
+                  <li>Copy danh sách từ Excel (Cột A: Họ tên, Cột B: Tên máy)</li>
+                  <li>Paste vào ô bên dưới</li>
+                  <li>Kiểm tra preview</li>
+                  <li>Chọn lớp và nhấn "Thêm tất cả"</li>
+                </ol>
+                <p className="text-xs text-blue-700 mt-2">
+                  Định dạng mỗi dòng: <code className="bg-blue-100 px-1 rounded">Nguyễn Văn A    A1</code>
+                </p>
+              </div>
+
+              {/* Select Class */}
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  Lớp <span className="text-red-500">*</span>
+                </label>
+                <select
+                  value={bulkClassId}
+                  onChange={(e) => setBulkClassId(e.target.value)}
+                  className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none"
+                >
+                  <option value="">-- Chọn lớp --</option>
+                  {classes.map((classItem) => (
+                    <option key={classItem.id} value={classItem.id}>
+                      {classItem.name} - {classItem.grades?.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Textarea Input */}
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  Dán danh sách vào đây:
+                </label>
+                <textarea
+                  value={bulkText}
+                  onChange={(e) => handleBulkTextChange(e.target.value)}
+                  placeholder="Nguyễn Văn A    A1&#10;Trần Thị B    A2&#10;Lê Văn C    A3"
+                  rows={8}
+                  className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none font-mono text-sm"
+                />
+              </div>
+
+              {/* Preview Table */}
+              {bulkPreview.length > 0 && (
+                <div>
+                  <h3 className="font-semibold text-gray-800 mb-2">
+                    Xem trước ({bulkPreview.length} học sinh):
+                  </h3>
+                  <div className="border-2 border-gray-300 rounded-lg overflow-hidden max-h-64 overflow-y-auto">
+                    <table className="w-full">
+                      <thead className="bg-gray-100 sticky top-0">
+                        <tr>
+                          <th className="px-4 py-2 text-left text-sm font-bold text-gray-700">STT</th>
+                          <th className="px-4 py-2 text-left text-sm font-bold text-gray-700">Họ và tên</th>
+                          <th className="px-4 py-2 text-left text-sm font-bold text-gray-700">Tên máy</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-200">
+                        {bulkPreview.map((student, index) => (
+                          <tr key={index} className="hover:bg-gray-50">
+                            <td className="px-4 py-2 text-sm text-gray-600">{index + 1}</td>
+                            <td className="px-4 py-2 text-sm font-semibold text-gray-800">{student.name}</td>
+                            <td className="px-4 py-2 text-sm">
+                              <span className="inline-block px-2 py-1 bg-purple-100 text-purple-800 rounded text-xs font-semibold">
+                                {student.computer_name}
+                              </span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="flex gap-3 mt-6">
+              <button
+                type="button"
+                onClick={closeBulkImport}
+                className="flex-1 px-4 py-2 border-2 border-gray-300 text-gray-700 rounded-lg font-semibold hover:bg-gray-50 transition-colors"
+              >
+                Hủy
+              </button>
+              <button
+                onClick={handleBulkImport}
+                disabled={bulkPreview.length === 0 || !bulkClassId}
+                className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg font-semibold hover:bg-green-700 transition-colors disabled:bg-gray-300 disabled:cursor-not-allowed"
+              >
+                Thêm tất cả ({bulkPreview.length})
+              </button>
+            </div>
           </div>
         </div>
       )}

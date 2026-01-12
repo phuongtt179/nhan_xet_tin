@@ -5,11 +5,17 @@ import { usePathname } from 'next/navigation';
 import { useState } from 'react';
 import {
   Home,
+  Layers,
   BookOpen,
   Users,
+  FileText,
+  CheckSquare,
+  Star,
   ClipboardList,
-  DollarSign,
-  BarChart3,
+  ClipboardCheck,
+  BarChart2,
+  UserCheck,
+  RefreshCw,
   ExternalLink,
   Menu,
   X
@@ -17,19 +23,25 @@ import {
 
 const navItems = [
   { href: '/', icon: Home, label: 'Tổng quan' },
+  { href: '/grades', icon: Layers, label: 'Khối lớp' },
   { href: '/classes', icon: BookOpen, label: 'Lớp học' },
+  { href: '/year-transition', icon: RefreshCw, label: 'Chuyển năm học' },
   { href: '/students', icon: Users, label: 'Học sinh' },
+  { href: '/topics', icon: FileText, label: 'Chủ đề' },
+  { href: '/criteria', icon: CheckSquare, label: 'Tiêu chí' },
+  { href: '/evaluation-levels', icon: Star, label: 'Mức đánh giá' },
   { href: '/attendance', icon: ClipboardList, label: 'Điểm danh' },
-  { href: '/payments', icon: DollarSign, label: 'Học phí' },
-  { href: '/statistics', icon: BarChart3, label: 'Thống kê' },
+  { href: '/evaluations', icon: ClipboardCheck, label: 'Đánh giá' },
+  { href: '/topic-summary', icon: BarChart2, label: 'Tổng hợp chủ đề' },
+  { href: '/student-summary', icon: UserCheck, label: 'Tổng hợp học sinh' },
 ];
 
 // Mobile bottom navigation - only show 4 items
 const mobileNavItems = [
   { href: '/', icon: Home, label: 'Tổng quan' },
   { href: '/attendance', icon: ClipboardList, label: 'Điểm danh' },
-  { href: '/payments', icon: DollarSign, label: 'Học phí' },
-  { href: '/statistics', icon: BarChart3, label: 'Thống kê' },
+  { href: '/evaluations', icon: ClipboardCheck, label: 'Đánh giá' },
+  { href: '/topic-summary', icon: BarChart2, label: 'Tổng hợp' },
 ];
 
 export default function Sidebar() {
@@ -42,7 +54,7 @@ export default function Sidebar() {
       <div className="lg:hidden fixed top-0 left-0 right-0 z-40 bg-gradient-to-r from-blue-600 to-blue-700 text-white px-4 py-3 flex items-center justify-between shadow-lg">
         <div>
           <h1 className="text-lg font-bold">Quản lý Lớp học</h1>
-          <p className="text-blue-100 text-xs">Điểm danh & Học phí</p>
+          <p className="text-blue-100 text-xs">Điểm danh và Nhận xét</p>
         </div>
         <button
           onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
@@ -73,7 +85,7 @@ export default function Sidebar() {
       >
         <div className="p-6 lg:block hidden">
           <h1 className="text-2xl font-bold">Quản lý Lớp học</h1>
-          <p className="text-blue-100 text-sm mt-1">Điểm danh & Học phí</p>
+          <p className="text-blue-100 text-sm mt-1">Điểm danh và Nhận xét</p>
         </div>
 
         <div className="p-6 lg:hidden">

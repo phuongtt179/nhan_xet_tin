@@ -2,121 +2,120 @@
 
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
-import { BookOpen, Users, ClipboardList, DollarSign, TrendingUp, TrendingDown } from 'lucide-react';
+import { Layers, BookOpen, Users, ClipboardList, TrendingUp, Calendar } from 'lucide-react';
 import Link from 'next/link';
-import { format } from 'date-fns';
+import { format, subDays } from 'date-fns';
+import { Class } from '@/lib/types';
 
 interface Stats {
+  totalGrades: number;
   totalClasses: number;
   totalStudents: number;
   todayAttendance: {
     present: number;
     total: number;
   };
-  currentMonthPayments: {
-    paid: number;
-    unpaid: number;
-    totalAmount: number;
-    paidAmount: number;
-  };
-  recentActivity: {
-    type: 'class' | 'student' | 'attendance' | 'payment';
-    message: string;
-    date: string;
-  }[];
 }
 
-interface TodayPayment {
-  studentName: string;
-  className: string;
-  amount: number;
+interface ClassBreakdown {
+  id: string;
+  name: string;
+  grade_name: string;
+  student_count: number;
+  today_present: number;
+  today_total: number;
+}
+
+interface RecentAttendance {
+  date: string;
+  present: number;
+  total: number;
 }
 
 export default function DashboardPage() {
   const [stats, setStats] = useState<Stats>({
+    totalGrades: 0,
     totalClasses: 0,
     totalStudents: 0,
     todayAttendance: { present: 0, total: 0 },
-    currentMonthPayments: { paid: 0, unpaid: 0, totalAmount: 0, paidAmount: 0 },
-    recentActivity: [],
   });
   const [loading, setLoading] = useState(true);
-  const [todayPayments, setTodayPayments] = useState<TodayPayment[]>([]);
+  const [schoolYears, setSchoolYears] = useState<string[]>([]);
+  const [selectedYear, setSelectedYear] = useState<string>('2025-2026');
+  const [classBreakdown, setClassBreakdown] = useState<ClassBreakdown[]>([]);
+  const [recentAttendance, setRecentAttendance] = useState<RecentAttendance[]>([]);
 
   useEffect(() => {
-    loadStats();
-    loadTodayPayments();
+    loadSchoolYears();
   }, []);
+
+  useEffect(() => {
+    if (selectedYear) {
+      loadStats();
+    }
+  }, [selectedYear]);
+
+  async function loadSchoolYears() {
+    const { data: classesData } = await supabase
+      .from('classes')
+      .select('school_year')
+      .order('school_year', { ascending: false });
+
+    const uniqueYears = Array.from(new Set(classesData?.map((c) => c.school_year) || []));
+    setSchoolYears(uniqueYears);
+
+    if (uniqueYears.length > 0 && !selectedYear) {
+      setSelectedYear(uniqueYears[0]);
+    }
+  }
 
   async function loadStats() {
     try {
       setLoading(true);
 
-      // Total classes
-      const { count: classesCount } = await supabase
-        .from('classes')
+      // Total grades
+      const { count: gradesCount } = await supabase
+        .from('grades')
         .select('*', { count: 'exact', head: true });
 
-      // Total students
+      // Total classes for selected year
+      const { data: classesData, count: classesCount } = await supabase
+        .from('classes')
+        .select('*, grades(name)', { count: 'exact' })
+        .eq('school_year', selectedYear);
+
+      // Total students for selected year
+      const classIds = classesData?.map(c => c.id) || [];
       const { count: studentsCount } = await supabase
         .from('students')
-        .select('*', { count: 'exact', head: true });
+        .select('*', { count: 'exact', head: true })
+        .in('class_id', classIds.length > 0 ? classIds : ['']);
 
       // Today's attendance
       const today = format(new Date(), 'yyyy-MM-dd');
       const { data: todayAttendance } = await supabase
         .from('attendance')
-        .select('status')
+        .select('status, class_id')
         .eq('date', today);
 
       const presentToday = todayAttendance?.filter(a => a.status === 'present').length || 0;
       const totalToday = todayAttendance?.length || 0;
 
-      // Current month payments
-      const currentMonth = format(new Date(), 'yyyy-MM');
-      const { data: payments } = await supabase
-        .from('payments')
-        .select('status, amount')
-        .eq('month', currentMonth);
-
-      const paidPayments = payments?.filter(p => p.status === 'paid') || [];
-      const paidAmount = paidPayments.reduce((sum, p) => sum + p.amount, 0);
-
-      // Calculate total expected amount based on all students and their class tuition
-      const { data: studentsWithClasses } = await supabase
-        .from('students')
-        .select(`
-          id,
-          classes!students_class_id_fkey (
-            tuition
-          )
-        `);
-
-      const totalExpectedAmount = (studentsWithClasses || []).reduce((sum, student: any) => {
-        const tuition = student.classes?.tuition || 0;
-        return sum + tuition;
-      }, 0);
-
-      // Calculate unpaid based on total students vs paid count
-      const totalStudents = studentsCount || 0;
-      const paidCount = paidPayments.length;
-      const unpaidCount = totalStudents - paidCount;
-
       setStats({
+        totalGrades: gradesCount || 0,
         totalClasses: classesCount || 0,
         totalStudents: studentsCount || 0,
         todayAttendance: {
           present: presentToday,
           total: totalToday,
         },
-        currentMonthPayments: {
-          paid: paidCount,
-          unpaid: unpaidCount,
-          totalAmount: totalExpectedAmount,
-          paidAmount,
-        },
-        recentActivity: [],
       });
+
+      // Load class breakdown
+      await loadClassBreakdown(classesData || [], todayAttendance || []);
+
+      // Load recent attendance (last 7 days)
+      await loadRecentAttendance();
     } catch (error) {
       console.error('Error loading stats:', error);
     } finally {
@@ -124,39 +123,60 @@ export default function DashboardPage() {
     }
   }
 
-  async function loadTodayPayments() {
-    try {
-      const today = format(new Date(), 'yyyy-MM-dd');
+  async function loadClassBreakdown(classes: any[], todayAttendance: any[]) {
+    const breakdown: ClassBreakdown[] = [];
 
-      const { data, error } = await supabase
-        .from('payments')
-        .select(`
-          amount,
-          students (
-            name
-          ),
-          classes (
-            name
-          )
-        `)
-        .eq('paid_date', today)
-        .eq('status', 'paid');
+    for (const cls of classes) {
+      // Count students in this class
+      const { count: studentCount } = await supabase
+        .from('students')
+        .select('*', { count: 'exact', head: true })
+        .eq('class_id', cls.id);
 
-      if (error) throw error;
+      // Today's attendance for this class
+      const classAttendance = todayAttendance.filter(a => a.class_id === cls.id);
+      const classPresent = classAttendance.filter(a => a.status === 'present').length;
 
-      const payments: TodayPayment[] = (data || []).map((p: any) => ({
-        studentName: p.students?.name || 'N/A',
-        className: p.classes?.name || 'N/A',
-        amount: p.amount,
-      }));
-
-      setTodayPayments(payments);
-    } catch (error) {
-      console.error('Error loading today payments:', error);
+      breakdown.push({
+        id: cls.id,
+        name: cls.name,
+        grade_name: cls.grades?.name || 'N/A',
+        student_count: studentCount || 0,
+        today_present: classPresent,
+        today_total: classAttendance.length,
+      });
     }
+
+    setClassBreakdown(breakdown);
+  }
+
+  async function loadRecentAttendance() {
+    const recent: RecentAttendance[] = [];
+
+    for (let i = 0; i < 7; i++) {
+      const date = format(subDays(new Date(), i), 'yyyy-MM-dd');
+      const { data } = await supabase
+        .from('attendance')
+        .select('status')
+        .eq('date', date);
+
+      const present = data?.filter(a => a.status === 'present').length || 0;
+      const total = data?.length || 0;
+
+      recent.push({ date, present, total });
+    }
+
+    setRecentAttendance(recent.reverse());
   }
 
   const statCards = [
+    {
+      title: 'Tổng số khối',
+      value: stats.totalGrades,
+      icon: Layers,
+      color: 'bg-purple-500',
+      link: '/grades',
+    },
     {
       title: 'Tổng số lớp',
       value: stats.totalClasses,
@@ -178,28 +198,34 @@ export default function DashboardPage() {
       color: 'bg-yellow-500',
       link: '/attendance',
     },
-    {
-      title: 'Học phí tháng này',
-      value: `${stats.currentMonthPayments.paid}/${stats.currentMonthPayments.paid + stats.currentMonthPayments.unpaid}`,
-      icon: DollarSign,
-      color: 'bg-purple-500',
-      link: '/payments',
-    },
   ];
 
   const attendancePercentage = stats.todayAttendance.total > 0
     ? Math.round((stats.todayAttendance.present / stats.todayAttendance.total) * 100)
     : 0;
 
-  const paymentPercentage = (stats.currentMonthPayments.paid + stats.currentMonthPayments.unpaid) > 0
-    ? Math.round((stats.currentMonthPayments.paid / (stats.currentMonthPayments.paid + stats.currentMonthPayments.unpaid)) * 100)
-    : 0;
-
   return (
-    <div className="p-4 lg:p-8">
-      <div className="mb-6 lg:mb-8">
-        <h1 className="text-2xl lg:text-3xl font-bold text-gray-800">Tổng quan</h1>
-        <p className="text-sm lg:text-base text-gray-600 mt-1">Dashboard quản lý lớp học & điểm danh</p>
+    <div className="p-4 lg:p-8 pb-20 lg:pb-8">
+      <div className="mb-6 lg:mb-8 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+        <div>
+          <h1 className="text-2xl lg:text-3xl font-bold text-gray-800">Tổng quan</h1>
+          <p className="text-sm lg:text-base text-gray-600 mt-1">Hệ thống đánh giá học sinh</p>
+        </div>
+        {schoolYears.length > 0 && (
+          <div className="flex items-center gap-3 bg-white px-4 py-2 rounded-lg shadow-md border-2 border-blue-100">
+            <Calendar className="text-blue-600" size={20} />
+            <label className="text-sm font-semibold text-gray-700">Năm học:</label>
+            <select
+              value={selectedYear}
+              onChange={(e) => setSelectedYear(e.target.value)}
+              className="px-3 py-1.5 border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none font-semibold text-gray-800"
+            >
+              {schoolYears.map((year) => (
+                <option key={year} value={year}>{year}</option>
+              ))}
+            </select>
+          </div>
+        )}
       </div>
 
       {loading ? (
@@ -230,101 +256,177 @@ export default function DashboardPage() {
             })}
           </div>
 
-          {/* Today's Payments */}
-          {todayPayments.length > 0 && (
+          {/* Attendance Stats */}
+          {stats.todayAttendance.total > 0 && (
             <div className="bg-white rounded-lg lg:rounded-xl shadow-md p-4 lg:p-6 mb-6 lg:mb-8">
               <h2 className="text-lg lg:text-xl font-bold text-gray-800 mb-3 lg:mb-4 flex items-center gap-2">
-                <DollarSign className="text-green-500" size={20} />
-                Học phí hôm nay ({format(new Date(), 'dd/MM/yyyy')})
+                <ClipboardList className="text-yellow-500" size={20} />
+                Điểm danh hôm nay ({format(new Date(), 'dd/MM/yyyy')})
               </h2>
-              <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead className="bg-gray-50 border-b-2 border-gray-200">
-                    <tr>
-                      <th className="px-3 lg:px-6 py-2 lg:py-3 text-left text-xs lg:text-sm font-bold text-gray-700">STT</th>
-                      <th className="px-3 lg:px-6 py-2 lg:py-3 text-left text-xs lg:text-sm font-bold text-gray-700">Tên học sinh</th>
-                      <th className="px-3 lg:px-6 py-2 lg:py-3 text-left text-xs lg:text-sm font-bold text-gray-700">Lớp</th>
-                      <th className="px-3 lg:px-6 py-2 lg:py-3 text-right text-xs lg:text-sm font-bold text-gray-700">Số tiền</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-200">
-                    {todayPayments.map((payment, index) => (
-                      <tr key={index} className="hover:bg-gray-50">
-                        <td className="px-3 lg:px-6 py-2 lg:py-3 text-xs lg:text-base text-gray-600">{index + 1}</td>
-                        <td className="px-3 lg:px-6 py-2 lg:py-3 text-xs lg:text-base font-semibold text-gray-800">{payment.studentName}</td>
-                        <td className="px-3 lg:px-6 py-2 lg:py-3 text-xs lg:text-base text-gray-600">{payment.className}</td>
-                        <td className="px-3 lg:px-6 py-2 lg:py-3 text-xs lg:text-base text-right font-semibold text-green-600">
-                          {payment.amount.toLocaleString('vi-VN')} đ
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                  <tfoot className="bg-gray-50 border-t-2 border-gray-200">
-                    <tr>
-                      <td colSpan={3} className="px-3 lg:px-6 py-2 lg:py-3 text-xs lg:text-sm font-bold text-gray-700 text-right">
-                        Tổng cộng:
-                      </td>
-                      <td className="px-3 lg:px-6 py-2 lg:py-3 text-right font-bold text-green-600">
-                        {todayPayments.reduce((sum, p) => sum + p.amount, 0).toLocaleString('vi-VN')} đ
-                      </td>
-                    </tr>
-                  </tfoot>
-                </table>
+              <div className="space-y-4">
+                <div className="flex justify-between items-center">
+                  <span className="text-gray-600">Có mặt:</span>
+                  <span className="text-2xl font-bold text-green-600">{stats.todayAttendance.present}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-gray-600">Tổng số:</span>
+                  <span className="text-2xl font-bold text-gray-800">{stats.todayAttendance.total}</span>
+                </div>
+                <div className="pt-4 border-t">
+                  <div className="flex justify-between items-center mb-2">
+                    <span className="text-gray-600 font-semibold">Tỷ lệ:</span>
+                    <span className="text-xl font-bold text-blue-600">{attendancePercentage}%</span>
+                  </div>
+                  <div className="w-full bg-gray-200 rounded-full h-3">
+                    <div
+                      className="bg-gradient-to-r from-green-400 to-green-600 h-3 rounded-full transition-all duration-500"
+                      style={{ width: `${attendancePercentage}%` }}
+                    ></div>
+                  </div>
+                </div>
               </div>
             </div>
           )}
 
-          {/* Payment Stats */}
-          <div className="bg-white rounded-lg lg:rounded-xl shadow-md p-4 lg:p-6 mb-6 lg:mb-8">
-            <h2 className="text-lg lg:text-xl font-bold text-gray-800 mb-3 lg:mb-4 flex items-center gap-2">
-              <DollarSign className="text-purple-500" size={20} />
-              Học phí tháng {format(new Date(), 'MM/yyyy')}
-            </h2>
-            <div className="space-y-4">
-              <div className="flex justify-between items-center">
-                <span className="text-gray-600">Đã đóng:</span>
-                <span className="text-2xl font-bold text-green-600">{stats.currentMonthPayments.paid}</span>
-              </div>
-              <div className="flex justify-between items-center">
-                <span className="text-gray-600">Chưa đóng:</span>
-                <span className="text-2xl font-bold text-red-600">{stats.currentMonthPayments.unpaid}</span>
-              </div>
-              <div className="pt-4 border-t">
-                <div className="flex justify-between items-center mb-2">
-                  <span className="text-gray-600 font-semibold">Đã thu:</span>
-                  <span className="text-lg font-bold text-green-600">
-                    {stats.currentMonthPayments.paidAmount.toLocaleString('vi-VN')} đ
-                  </span>
-                </div>
-                <div className="flex justify-between items-center mb-2">
-                  <span className="text-gray-600 font-semibold">Tổng dự kiến:</span>
-                  <span className="text-lg font-bold text-gray-800">
-                    {stats.currentMonthPayments.totalAmount.toLocaleString('vi-VN')} đ
-                  </span>
-                </div>
-                <div className="w-full bg-gray-200 rounded-full h-3 mt-3">
-                  <div
-                    className="bg-gradient-to-r from-purple-400 to-purple-600 h-3 rounded-full transition-all duration-500"
-                    style={{ width: `${paymentPercentage}%` }}
-                  ></div>
-                </div>
-                <p className="text-center mt-2 text-sm text-gray-600">
-                  {paymentPercentage}% đã thu
-                </p>
+          {/* Class Breakdown */}
+          {classBreakdown.length > 0 && (
+            <div className="bg-white rounded-lg lg:rounded-xl shadow-md p-4 lg:p-6 mb-6 lg:mb-8">
+              <h2 className="text-lg lg:text-xl font-bold text-gray-800 mb-4 flex items-center gap-2">
+                <BookOpen className="text-blue-500" size={20} />
+                Chi tiết theo lớp ({selectedYear})
+              </h2>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {classBreakdown.map((cls) => {
+                  const percentage = cls.today_total > 0
+                    ? Math.round((cls.today_present / cls.today_total) * 100)
+                    : 0;
+
+                  return (
+                    <Link
+                      key={cls.id}
+                      href={`/attendance?class=${cls.id}`}
+                      className="border-2 border-gray-200 rounded-lg p-4 hover:border-blue-400 hover:shadow-lg transition-all"
+                    >
+                      <div className="flex justify-between items-start mb-3">
+                        <div>
+                          <h3 className="font-bold text-gray-800">{cls.name}</h3>
+                          <p className="text-xs text-gray-500">{cls.grade_name}</p>
+                        </div>
+                        <div className="bg-blue-100 text-blue-700 px-2 py-1 rounded-full text-xs font-semibold">
+                          {cls.student_count} HS
+                        </div>
+                      </div>
+                      <div className="space-y-2">
+                        <div className="flex justify-between text-sm">
+                          <span className="text-gray-600">Điểm danh hôm nay:</span>
+                          <span className="font-bold text-gray-800">
+                            {cls.today_present}/{cls.today_total}
+                          </span>
+                        </div>
+                        {cls.today_total > 0 && (
+                          <div className="w-full bg-gray-200 rounded-full h-2">
+                            <div
+                              className="bg-gradient-to-r from-green-400 to-green-600 h-2 rounded-full transition-all"
+                              style={{ width: `${percentage}%` }}
+                            ></div>
+                          </div>
+                        )}
+                      </div>
+                    </Link>
+                  );
+                })}
               </div>
             </div>
-          </div>
+          )}
 
-          {/* Welcome Message */}
-          {stats.totalClasses === 0 && (
-            <div className="mt-8 bg-gradient-to-r from-blue-500 to-blue-600 rounded-xl shadow-lg p-8 text-white">
-              <h2 className="text-2xl font-bold mb-2">Chào mừng đến với Hệ thống Quản lý Lớp học! 🎓</h2>
-              <p className="mb-4">Để bắt đầu, hãy thêm lớp học đầu tiên của bạn.</p>
+          {/* Recent Attendance Trend */}
+          {recentAttendance.length > 0 && (
+            <div className="bg-white rounded-lg lg:rounded-xl shadow-md p-4 lg:p-6 mb-6 lg:mb-8">
+              <h2 className="text-lg lg:text-xl font-bold text-gray-800 mb-4 flex items-center gap-2">
+                <TrendingUp className="text-purple-500" size={20} />
+                xu hướng điểm danh 7 ngày qua
+              </h2>
+              <div className="overflow-x-auto">
+                <div className="flex gap-2 min-w-max lg:min-w-0">
+                  {recentAttendance.map((day, index) => {
+                    const percentage = day.total > 0
+                      ? Math.round((day.present / day.total) * 100)
+                      : 0;
+                    const maxHeight = 120;
+                    const barHeight = percentage > 0 ? Math.max((percentage / 100) * maxHeight, 10) : 0;
+
+                    return (
+                      <div key={index} className="flex-1 min-w-[80px]">
+                        <div className="flex flex-col items-center">
+                          <div className="w-full bg-gray-100 rounded-t-lg flex items-end justify-center" style={{ height: `${maxHeight}px` }}>
+                            {day.total > 0 ? (
+                              <div
+                                className="w-full bg-gradient-to-t from-blue-500 to-blue-400 rounded-t-lg flex flex-col items-center justify-end pb-2 transition-all"
+                                style={{ height: `${barHeight}px` }}
+                              >
+                                <span className="text-white text-xs font-bold">{percentage}%</span>
+                              </div>
+                            ) : (
+                              <span className="text-gray-400 text-xs mb-2">N/A</span>
+                            )}
+                          </div>
+                          <div className="text-center mt-2">
+                            <p className="text-xs font-semibold text-gray-700">
+                              {format(new Date(day.date), 'dd/MM')}
+                            </p>
+                            <p className="text-xs text-gray-500">
+                              {day.present}/{day.total}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Quick Start Guide */}
+          {stats.totalGrades === 0 && (
+            <div className="bg-gradient-to-r from-blue-500 to-blue-600 rounded-xl shadow-lg p-6 lg:p-8 text-white">
+              <h2 className="text-xl lg:text-2xl font-bold mb-3">Chào mừng đến với Hệ thống Đánh giá Học sinh! 🎓</h2>
+              <p className="mb-4 text-blue-50">Để bắt đầu sử dụng, hãy thực hiện các bước sau:</p>
+              <div className="space-y-3">
+                <div className="flex items-start gap-3 bg-white/10 p-3 rounded-lg">
+                  <div className="bg-white text-blue-600 w-8 h-8 rounded-full flex items-center justify-center font-bold flex-shrink-0">1</div>
+                  <div>
+                    <p className="font-semibold">Tạo Khối lớp</p>
+                    <p className="text-sm text-blue-100">Ví dụ: Khối 3, Khối 4, Khối 5</p>
+                  </div>
+                </div>
+                <div className="flex items-start gap-3 bg-white/10 p-3 rounded-lg">
+                  <div className="bg-white text-blue-600 w-8 h-8 rounded-full flex items-center justify-center font-bold flex-shrink-0">2</div>
+                  <div>
+                    <p className="font-semibold">Tạo Lớp học</p>
+                    <p className="text-sm text-blue-100">Thêm các lớp vào khối đã tạo</p>
+                  </div>
+                </div>
+                <div className="flex items-start gap-3 bg-white/10 p-3 rounded-lg">
+                  <div className="bg-white text-blue-600 w-8 h-8 rounded-full flex items-center justify-center font-bold flex-shrink-0">3</div>
+                  <div>
+                    <p className="font-semibold">Thêm Học sinh</p>
+                    <p className="text-sm text-blue-100">Thêm học sinh vào lớp và gán tên máy (A1-E8)</p>
+                  </div>
+                </div>
+                <div className="flex items-start gap-3 bg-white/10 p-3 rounded-lg">
+                  <div className="bg-white text-blue-600 w-8 h-8 rounded-full flex items-center justify-center font-bold flex-shrink-0">4</div>
+                  <div>
+                    <p className="font-semibold">Tạo Chủ đề & Tiêu chí</p>
+                    <p className="text-sm text-blue-100">Thiết lập các chủ đề và tiêu chí đánh giá</p>
+                  </div>
+                </div>
+              </div>
               <Link
-                href="/classes"
-                className="inline-block px-6 py-3 bg-white text-blue-600 rounded-lg font-semibold hover:bg-blue-50 transition-colors"
+                href="/grades"
+                className="inline-block mt-6 px-6 py-3 bg-white text-blue-600 rounded-lg font-semibold hover:bg-blue-50 transition-colors"
               >
-                Thêm lớp học ngay
+                Bắt đầu ngay
               </Link>
             </div>
           )}
