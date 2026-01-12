@@ -28,6 +28,10 @@ export const viewport = {
   themeColor: '#2563eb',
 }
 
+// Disable static generation for all pages - force dynamic rendering
+export const dynamic = 'force-dynamic'
+export const revalidate = 0
+
 export default function RootLayout({
   children,
 }: {
