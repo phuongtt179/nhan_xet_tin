@@ -10,7 +10,8 @@ interface StudentEvaluation {
   studentId: string;
   studentName: string;
   computerName: string | null;
-  rating: number; // 1=Chưa đạt, 2=Hoàn thành(default), 3=Tốt, 4=Rất tốt
+  rating: number; // 1=Chưa đạt, 2=Hoàn thành(default), 3=Tốt, 4=Rất tốt, 0=Vắng mặt
+  isAbsent: boolean; // true nếu học sinh vắng mặt
 }
 
 export default function EvaluationsPage() {
@@ -140,14 +141,27 @@ export default function EvaluationsPage() {
 
       if (evaluationsError) throw evaluationsError;
 
+      // Load attendance data for this date
+      const { data: attendanceData, error: attendanceError } = await supabase
+        .from('attendance')
+        .select('student_id, status')
+        .eq('class_id', selectedClassId)
+        .eq('date', selectedDate);
+
+      if (attendanceError) throw attendanceError;
+
       // Merge data
       const studentEvals: StudentEvaluation[] = (studentsData || []).map(student => {
         const existing = evaluationsData?.find(e => e.student_id === student.id);
+        const attendance = attendanceData?.find(a => a.student_id === student.id);
+        const isAbsent = attendance?.status === 'absent';
+
         return {
           studentId: student.id,
           studentName: student.name,
           computerName: student.computer_name,
-          rating: existing?.rating || 2, // Default: Hoàn thành
+          rating: isAbsent ? 0 : (existing?.rating || 2), // 0 nếu vắng, default 2 (Hoàn thành)
+          isAbsent: isAbsent,
         };
       });
 
@@ -163,7 +177,7 @@ export default function EvaluationsPage() {
   function cycleRating(studentId: string) {
     setStudents(prevStudents =>
       prevStudents.map(s => {
-        if (s.studentId === studentId) {
+        if (s.studentId === studentId && !s.isAbsent) {
           // Cycle: 2(Hoàn thành) -> 3(Tốt) -> 4(Rất tốt) -> 1(Chưa đạt) -> 2(Hoàn thành)
           let newRating: number;
           if (s.rating === 2) newRating = 3;
@@ -188,6 +202,11 @@ export default function EvaluationsPage() {
       setSaving(true);
 
       for (const student of students) {
+        // Skip absent students (rating = 0)
+        if (student.isAbsent) {
+          continue;
+        }
+
         // Check if evaluation exists
         const { data: existing } = await supabase
           .from('evaluations')
@@ -232,6 +251,8 @@ export default function EvaluationsPage() {
 
   function getRatingLabel(rating: number): { text: string; color: string } {
     switch (rating) {
+      case 0:
+        return { text: 'Vắng', color: 'bg-gray-100 text-gray-500' };
       case 1:
         return { text: 'Chưa đạt', color: 'bg-red-100 text-red-800' };
       case 2:
@@ -410,7 +431,11 @@ export default function EvaluationsPage() {
                     <tr
                       key={student.studentId}
                       onClick={() => cycleRating(student.studentId)}
-                      className="hover:bg-gray-50 cursor-pointer active:bg-gray-100 transition-colors"
+                      className={`transition-colors ${
+                        student.isAbsent
+                          ? 'opacity-50 cursor-not-allowed bg-gray-50'
+                          : 'hover:bg-gray-50 cursor-pointer active:bg-gray-100'
+                      }`}
                     >
                       <td className="px-2 lg:px-4 py-3 text-center text-xs lg:text-sm text-gray-600">
                         {index + 1}
