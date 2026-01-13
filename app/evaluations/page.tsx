@@ -129,7 +129,10 @@ export default function EvaluationsPage() {
         .eq('class_id', selectedClassId)
         .order('computer_name', { ascending: true, nullsFirst: false });
 
-      if (studentsError) throw studentsError;
+      if (studentsError) {
+        console.error('Error loading students:', studentsError);
+        throw studentsError;
+      }
 
       // Load existing evaluations for this criterion and date
       const { data: evaluationsData, error: evaluationsError } = await supabase
@@ -139,7 +142,10 @@ export default function EvaluationsPage() {
         .eq('criterion_id', selectedCriterionId)
         .eq('evaluated_date', selectedDate);
 
-      if (evaluationsError) throw evaluationsError;
+      if (evaluationsError) {
+        console.error('Error loading evaluations:', evaluationsError);
+        // Don't throw, just continue without existing evaluation data
+      }
 
       // Load attendance data for this date
       const { data: attendanceData, error: attendanceError } = await supabase
@@ -148,7 +154,10 @@ export default function EvaluationsPage() {
         .eq('class_id', selectedClassId)
         .eq('date', selectedDate);
 
-      if (attendanceError) throw attendanceError;
+      if (attendanceError) {
+        console.error('Error loading attendance:', attendanceError);
+        // Don't throw, just continue without attendance data
+      }
 
       // Merge data
       const studentEvals: StudentEvaluation[] = (studentsData || []).map(student => {
