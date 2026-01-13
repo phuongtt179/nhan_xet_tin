@@ -18,7 +18,8 @@ import {
   RefreshCw,
   ExternalLink,
   Menu,
-  X
+  X,
+  CalendarCheck
 } from 'lucide-react';
 
 const navItems = [
@@ -34,6 +35,7 @@ const navItems = [
   { href: '/evaluations', icon: ClipboardCheck, label: 'Đánh giá' },
   { href: '/topic-summary', icon: BarChart2, label: 'Tổng hợp chủ đề' },
   { href: '/student-summary', icon: UserCheck, label: 'Tổng hợp học sinh' },
+  { href: '/attendance-summary', icon: CalendarCheck, label: 'Thống kê buổi học' },
 ];
 
 // Mobile bottom navigation - only show 4 items
