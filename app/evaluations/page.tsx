@@ -216,28 +216,38 @@ export default function EvaluationsPage() {
           continue;
         }
 
-        // Check if evaluation exists
-        const { data: existing } = await supabase
+        // Check if evaluation exists (without .single() to avoid 406 error)
+        const { data: existingList, error: checkError } = await supabase
           .from('evaluations')
           .select('id')
           .eq('student_id', student.studentId)
           .eq('criterion_id', selectedCriterionId)
           .eq('class_id', selectedClassId)
-          .eq('evaluated_date', selectedDate)
-          .single();
+          .eq('evaluated_date', selectedDate);
+
+        if (checkError) {
+          console.error('Error checking evaluation:', checkError);
+          continue;
+        }
+
+        const existing = existingList && existingList.length > 0 ? existingList[0] : null;
 
         if (existing) {
           // Update
-          await supabase
+          const { error: updateError } = await supabase
             .from('evaluations')
             .update({
               rating: student.rating,
               updated_at: new Date().toISOString(),
             })
             .eq('id', existing.id);
+
+          if (updateError) {
+            console.error('Error updating evaluation:', updateError);
+          }
         } else {
           // Insert
-          await supabase
+          const { error: insertError } = await supabase
             .from('evaluations')
             .insert([{
               student_id: student.studentId,
@@ -246,6 +256,10 @@ export default function EvaluationsPage() {
               evaluated_date: selectedDate,
               rating: student.rating,
             }]);
+
+          if (insertError) {
+            console.error('Error inserting evaluation:', insertError);
+          }
         }
       }
 
