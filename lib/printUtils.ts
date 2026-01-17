@@ -14,9 +14,17 @@ export function printTopicSummary(
     totalAverage: number;
   }[]
 ) {
-  const dateRange = startDate
-    ? `${format(new Date(startDate), 'dd/MM/yyyy')} - ${format(new Date(endDate), 'dd/MM/yyyy')}`
-    : 'Tất cả';
+  let dateRange = 'Tất cả';
+  try {
+    if (startDate && endDate) {
+      dateRange = `${format(new Date(startDate), 'dd/MM/yyyy')} - ${format(new Date(endDate), 'dd/MM/yyyy')}`;
+    } else if (endDate) {
+      dateRange = `Đến ${format(new Date(endDate), 'dd/MM/yyyy')}`;
+    }
+  } catch (e) {
+    console.error('Error formatting date:', e);
+    dateRange = 'Tất cả';
+  }
 
   const renderStars = (rating: number): string => {
     if (rating === 0) return '-';
@@ -226,9 +234,17 @@ export function printSingleStudent(
     overallAverage: number;
   }
 ) {
-  const dateRange = startDate
-    ? `${format(new Date(startDate), 'dd/MM/yyyy')} - ${format(new Date(endDate), 'dd/MM/yyyy')}`
-    : 'Tất cả';
+  let dateRange = 'Tất cả';
+  try {
+    if (startDate && endDate) {
+      dateRange = `${format(new Date(startDate), 'dd/MM/yyyy')} - ${format(new Date(endDate), 'dd/MM/yyyy')}`;
+    } else if (endDate) {
+      dateRange = `Đến ${format(new Date(endDate), 'dd/MM/yyyy')}`;
+    }
+  } catch (e) {
+    console.error('Error formatting date:', e);
+    dateRange = 'Tất cả';
+  }
 
   const renderStars = (rating: number): string => {
     if (rating === 0) return 'Chưa có';
@@ -440,9 +456,17 @@ export function printAllStudents(
     overallAverage: number;
   }[]
 ) {
-  const dateRange = startDate
-    ? `${format(new Date(startDate), 'dd/MM/yyyy')} - ${format(new Date(endDate), 'dd/MM/yyyy')}`
-    : 'Tất cả';
+  let dateRange = 'Tất cả';
+  try {
+    if (startDate && endDate) {
+      dateRange = `${format(new Date(startDate), 'dd/MM/yyyy')} - ${format(new Date(endDate), 'dd/MM/yyyy')}`;
+    } else if (endDate) {
+      dateRange = `Đến ${format(new Date(endDate), 'dd/MM/yyyy')}`;
+    }
+  } catch (e) {
+    console.error('Error formatting date:', e);
+    dateRange = 'Tất cả';
+  }
 
   const renderStars = (rating: number): string => {
     if (rating === 0) return '-';
