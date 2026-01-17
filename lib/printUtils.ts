@@ -28,11 +28,14 @@ export function printTopicSummary(
     return `${stars} (${rating.toFixed(1)})`;
   };
 
-  const printWindow = window.open('', '_blank');
+  const printWindow = window.open('about:blank', '_blank', 'width=1000,height=700');
   if (!printWindow) {
     alert('Vui lòng cho phép popup để in PDF');
     return;
   }
+
+  // Wait for window to be ready
+  printWindow.document.open();
 
   const html = `
 <!DOCTYPE html>
@@ -237,11 +240,14 @@ export function printSingleStudent(
     return `${stars} (${rating.toFixed(1)})`;
   };
 
-  const printWindow = window.open('', '_blank');
+  const printWindow = window.open('about:blank', '_blank', 'width=1000,height=700');
   if (!printWindow) {
     alert('Vui lòng cho phép popup để in PDF');
     return;
   }
+
+  // Wait for window to be ready
+  printWindow.document.open();
 
   const html = `
 <!DOCTYPE html>
@@ -448,11 +454,14 @@ export function printAllStudents(
     return `${stars} (${rating.toFixed(1)})`;
   };
 
-  const printWindow = window.open('', '_blank');
+  const printWindow = window.open('about:blank', '_blank', 'width=1000,height=700');
   if (!printWindow) {
     alert('Vui lòng cho phép popup để in PDF');
     return;
   }
+
+  // Wait for window to be ready
+  printWindow.document.open();
 
   const html = `
 <!DOCTYPE html>
