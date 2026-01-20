@@ -383,41 +383,40 @@ export default function StudentSummaryPage() {
     }
   }
 
-  function renderStars(rating: number) {
+  function getRatingLabel(rating: number) {
     if (rating === 0) {
       return <span className="text-gray-400 text-xs">Chưa có</span>;
     }
-
-    const fullStars = Math.floor(rating);
-    const hasHalfStar = rating % 1 >= 0.5;
-
+    const rounded = Math.round(rating);
+    const labels: { [key: number]: { text: string; color: string } } = {
+      1: { text: 'Chưa đạt', color: 'text-red-600 bg-red-50' },
+      2: { text: 'Hoàn thành', color: 'text-blue-600 bg-blue-50' },
+      3: { text: 'Tốt', color: 'text-green-600 bg-green-50' },
+      4: { text: 'Rất tốt', color: 'text-yellow-600 bg-yellow-50' },
+    };
+    const label = labels[rounded] || labels[2];
     return (
-      <div className="flex items-center justify-center gap-0.5">
-        {[1, 2, 3].map(i => {
-          if (i <= fullStars) {
-            return (
-              <BarChart2
-                key={i}
-                size={14}
-                className="fill-yellow-400 text-yellow-400"
-              />
-            );
-          } else if (i === fullStars + 1 && hasHalfStar) {
-            return (
-              <div key={i} className="relative">
-                <BarChart2 size={14} className="text-gray-300" />
-                <div className="absolute inset-0 overflow-hidden w-1/2">
-                  <BarChart2 size={14} className="fill-yellow-400 text-yellow-400" />
-                </div>
-              </div>
-            );
-          } else {
-            return <BarChart2 key={i} size={14} className="text-gray-300" />;
-          }
-        })}
-        <span className="text-xs text-gray-600 ml-1">({rating.toFixed(1)})</span>
-      </div>
+      <span className={`px-2 py-1 rounded text-xs font-semibold ${label.color}`}>
+        {label.text}
+      </span>
     );
+  }
+
+  function calculateOverallResult(topics: { averageRating: number }[]) {
+    const ratings = topics.map(t => t.averageRating).filter(r => r > 0);
+    if (ratings.length === 0) return { text: '-', color: 'text-gray-400' };
+
+    const totalTopics = ratings.length;
+    const goodOrBetter = ratings.filter(r => r >= 3).length;
+    const notCompleted = ratings.filter(r => Math.round(r) === 1).length;
+
+    if (goodOrBetter >= (totalTopics * 3 / 4) && notCompleted === 0) {
+      return { text: 'Hoàn thành tốt', color: 'text-green-600' };
+    }
+    if (notCompleted >= (totalTopics / 2)) {
+      return { text: 'Chưa hoàn thành', color: 'text-red-600' };
+    }
+    return { text: 'Hoàn thành', color: 'text-blue-600' };
   }
 
   const canShowSummary = selectedClassId && selectedStudentId && studentDetail && studentDetail.topics.length > 0;
@@ -632,9 +631,9 @@ export default function StudentSummaryPage() {
               </div>
               <div className="text-right flex items-center gap-3">
                 <div>
-                  <p className="text-xs lg:text-sm text-gray-600">Điểm trung bình</p>
-                  <div className="text-2xl lg:text-3xl font-bold text-blue-600">
-                    {studentDetail.overallAverage.toFixed(1)}
+                  <p className="text-xs lg:text-sm text-gray-600">Kết quả</p>
+                  <div className={`text-xl lg:text-2xl font-bold ${calculateOverallResult(studentDetail.topics).color}`}>
+                    {calculateOverallResult(studentDetail.topics).text}
                   </div>
                 </div>
                 <button
@@ -661,7 +660,7 @@ export default function StudentSummaryPage() {
                     Tiến độ
                   </th>
                   <th className="px-3 lg:px-4 py-3 text-center text-xs lg:text-sm font-bold text-gray-700">
-                    Điểm TB
+                    Đánh giá
                   </th>
                 </tr>
               </thead>
@@ -689,7 +688,7 @@ export default function StudentSummaryPage() {
                       </div>
                     </td>
                     <td className="px-3 lg:px-4 py-3 text-center">
-                      {renderStars(topic.averageRating)}
+                      {getRatingLabel(topic.averageRating)}
                     </td>
                   </tr>
                 ))}
@@ -701,12 +700,13 @@ export default function StudentSummaryPage() {
           <div className="mt-4 lg:mt-6 bg-blue-50 border-2 border-blue-200 rounded-lg p-4">
             <h3 className="font-semibold text-gray-800 mb-2 text-sm lg:text-base">Ghi chú:</h3>
             <ul className="space-y-1 text-xs lg:text-sm text-gray-700">
-              <li>• Điểm TB là điểm trung bình của tất cả đánh giá trong khoảng thời gian đã chọn</li>
-              <li>• Tiến độ hiển thị số tiêu chí đã được đánh giá / tổng số tiêu chí của chủ đề</li>
-              <li>• &quot;Chưa có&quot; nghĩa là chủ đề này chưa có đánh giá nào</li>
+              <li>• <span className="text-red-600 font-semibold">Chưa đạt</span>, <span className="text-blue-600 font-semibold">Hoàn thành</span>, <span className="text-green-600 font-semibold">Tốt</span>, <span className="text-yellow-600 font-semibold">Rất tốt</span></li>
+              <li>• <span className="font-semibold">Hoàn thành tốt</span>: ≥3/4 chủ đề đạt Tốt+ và không có Chưa đạt</li>
+              <li>• <span className="font-semibold">Chưa hoàn thành</span>: ≥1/2 chủ đề Chưa đạt</li>
+              <li>• Tiến độ hiển thị số tiêu chí đã được đánh giá / tổng số tiêu chí</li>
             </ul>
           </div>
-        </>
+</>
       )}
     </div>
   );

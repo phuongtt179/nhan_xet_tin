@@ -1,5 +1,23 @@
 import { format } from 'date-fns';
 
+function openPrintWindow(html: string) {
+  // Use Blob URL - more reliable than document.write()
+  const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const printWindow = window.open(url, '_blank', 'width=1000,height=700');
+
+  if (!printWindow) {
+    alert('Vui lòng cho phép popup để in PDF');
+    URL.revokeObjectURL(url);
+    return;
+  }
+
+  // Clean up blob URL after window loads
+  printWindow.onload = () => {
+    URL.revokeObjectURL(url);
+  };
+}
+
 export function printTopicSummary(
   className: string,
   topicName: string,
@@ -20,30 +38,53 @@ export function printTopicSummary(
       dateRange = `${format(new Date(startDate), 'dd/MM/yyyy')} - ${format(new Date(endDate), 'dd/MM/yyyy')}`;
     } else if (endDate) {
       dateRange = `Đến ${format(new Date(endDate), 'dd/MM/yyyy')}`;
+    } else if (startDate) {
+      dateRange = `Từ ${format(new Date(startDate), 'dd/MM/yyyy')}`;
     }
   } catch (e) {
     console.error('Error formatting date:', e);
     dateRange = 'Tất cả';
   }
 
-  const renderStars = (rating: number): string => {
+  const getRatingLabel = (rating: number): string => {
     if (rating === 0) return '-';
-    const fullStars = Math.floor(rating);
-    const hasHalfStar = rating % 1 >= 0.5;
-    let stars = '★'.repeat(fullStars);
-    if (hasHalfStar) stars += '½';
-    stars += '☆'.repeat(3 - Math.ceil(rating));
-    return `${stars} (${rating.toFixed(1)})`;
+    const rounded = Math.round(rating);
+    switch (rounded) {
+      case 1: return 'Chưa đạt';
+      case 2: return 'Hoàn thành';
+      case 3: return 'Tốt';
+      case 4: return 'Rất tốt';
+      default: return 'Hoàn thành';
+    }
   };
 
-  const printWindow = window.open('about:blank', '_blank', 'width=1000,height=700');
-  if (!printWindow) {
-    alert('Vui lòng cho phép popup để in PDF');
-    return;
-  }
+  // Calculate result based on criteria ratings
+  const calculateResult = (criteriaRatings: { [key: string]: number }): string => {
+    const ratings = Object.values(criteriaRatings).filter(r => r > 0);
+    if (ratings.length === 0) return '-';
 
-  // Wait for window to be ready
-  printWindow.document.open();
+    const totalCriteria = ratings.length;
+    const goodOrBetter = ratings.filter(r => r >= 3).length; // Tốt (3) or Rất tốt (4)
+    const notCompleted = ratings.filter(r => r === 1).length; // Chưa đạt (1)
+
+    // If 3/4 or more are "Tốt" or better AND no "Chưa đạt" → "Hoàn thành tốt"
+    if (goodOrBetter >= (totalCriteria * 3 / 4) && notCompleted === 0) {
+      return 'Hoàn thành tốt';
+    }
+    // If 1/2 or more are "Chưa đạt" → "Chưa hoàn thành"
+    if (notCompleted >= (totalCriteria / 2)) {
+      return 'Chưa hoàn thành';
+    }
+    // Otherwise → "Hoàn thành"
+    return 'Hoàn thành';
+  };
+
+  let exportDate = '';
+  try {
+    exportDate = format(new Date(), 'dd/MM/yyyy HH:mm');
+  } catch (e) {
+    exportDate = new Date().toLocaleString('vi-VN');
+  }
 
   const html = `
 <!DOCTYPE html>
@@ -164,7 +205,7 @@ export function printTopicSummary(
     <h1>TỔNG HỢP THEO CHỦ ĐỀ</h1>
     <div class="subtitle">${gradeName} - ${className} - Chủ đề: ${topicName}</div>
     <div class="date-range">Khoảng thời gian: ${dateRange}</div>
-    <div class="export-date">Ngày xuất: ${format(new Date(), 'dd/MM/yyyy HH:mm')}</div>
+    <div class="export-date">Ngày xuất: ${exportDate}</div>
   </div>
 
   <table>
@@ -173,7 +214,7 @@ export function printTopicSummary(
         <th style="width: 120px;">Họ tên</th>
         <th style="width: 50px;">Máy</th>
         ${criteria.map(c => `<th>${c.name}</th>`).join('')}
-        <th style="width: 80px;">Trung bình</th>
+        <th style="width: 100px;">Kết quả</th>
       </tr>
     </thead>
     <tbody>
@@ -182,9 +223,9 @@ export function printTopicSummary(
           <td class="student-name">${student.studentName}</td>
           <td class="computer-name">${student.computerName || '-'}</td>
           ${criteria.map(criterion => `
-            <td>${renderStars(student.criteriaRatings[criterion.id] || 0)}</td>
+            <td>${getRatingLabel(student.criteriaRatings[criterion.id] || 0)}</td>
           `).join('')}
-          <td class="average-col">${renderStars(student.totalAverage)}</td>
+          <td class="average-col">${calculateResult(student.criteriaRatings)}</td>
         </tr>
       `).join('')}
     </tbody>
@@ -213,8 +254,7 @@ export function printTopicSummary(
 </html>
   `;
 
-  printWindow.document.write(html);
-  printWindow.document.close();
+  openPrintWindow(html);
 }
 
 export function printSingleStudent(
@@ -240,30 +280,50 @@ export function printSingleStudent(
       dateRange = `${format(new Date(startDate), 'dd/MM/yyyy')} - ${format(new Date(endDate), 'dd/MM/yyyy')}`;
     } else if (endDate) {
       dateRange = `Đến ${format(new Date(endDate), 'dd/MM/yyyy')}`;
+    } else if (startDate) {
+      dateRange = `Từ ${format(new Date(startDate), 'dd/MM/yyyy')}`;
     }
   } catch (e) {
     console.error('Error formatting date:', e);
     dateRange = 'Tất cả';
   }
 
-  const renderStars = (rating: number): string => {
+  const getRatingLabel = (rating: number): string => {
     if (rating === 0) return 'Chưa có';
-    const fullStars = Math.floor(rating);
-    const hasHalfStar = rating % 1 >= 0.5;
-    let stars = '★'.repeat(fullStars);
-    if (hasHalfStar) stars += '½';
-    stars += '☆'.repeat(3 - Math.ceil(rating));
-    return `${stars} (${rating.toFixed(1)})`;
+    const rounded = Math.round(rating);
+    switch (rounded) {
+      case 1: return 'Chưa đạt';
+      case 2: return 'Hoàn thành';
+      case 3: return 'Tốt';
+      case 4: return 'Rất tốt';
+      default: return 'Hoàn thành';
+    }
   };
 
-  const printWindow = window.open('about:blank', '_blank', 'width=1000,height=700');
-  if (!printWindow) {
-    alert('Vui lòng cho phép popup để in PDF');
-    return;
-  }
+  // Calculate overall result based on topic ratings
+  const calculateOverallResult = (topics: { averageRating: number }[]): string => {
+    const ratings = topics.map(t => t.averageRating).filter(r => r > 0);
+    if (ratings.length === 0) return '-';
 
-  // Wait for window to be ready
-  printWindow.document.open();
+    const totalTopics = ratings.length;
+    const goodOrBetter = ratings.filter(r => r >= 3).length;
+    const notCompleted = ratings.filter(r => Math.round(r) === 1).length;
+
+    if (goodOrBetter >= (totalTopics * 3 / 4) && notCompleted === 0) {
+      return 'Hoàn thành tốt';
+    }
+    if (notCompleted >= (totalTopics / 2)) {
+      return 'Chưa hoàn thành';
+    }
+    return 'Hoàn thành';
+  };
+
+  let exportDate = '';
+  try {
+    exportDate = format(new Date(), 'dd/MM/yyyy HH:mm');
+  } catch (e) {
+    exportDate = new Date().toLocaleString('vi-VN');
+  }
 
   const html = `
 <!DOCTYPE html>
@@ -388,13 +448,13 @@ export function printSingleStudent(
     <h1>TỔNG HỢP HỌC SINH</h1>
     <div class="subtitle">${gradeName} - ${className}</div>
     <div class="date-range">Khoảng thời gian: ${dateRange}</div>
-    <div class="export-date">Ngày xuất: ${format(new Date(), 'dd/MM/yyyy HH:mm')}</div>
+    <div class="export-date">Ngày xuất: ${exportDate}</div>
   </div>
 
   <div class="student-info">
     <h2>Học sinh: ${student.studentName}</h2>
     ${student.computerName ? `<div class="detail">Máy: ${student.computerName}</div>` : ''}
-    <div class="average">Điểm trung bình: ${student.overallAverage.toFixed(1)}</div>
+    <div class="average">Kết quả: ${calculateOverallResult(student.topics)}</div>
   </div>
 
   <table>
@@ -402,7 +462,7 @@ export function printSingleStudent(
       <tr>
         <th style="width: 40%;">Chủ đề</th>
         <th style="width: 30%;">Tiến độ</th>
-        <th style="width: 30%;">Điểm TB</th>
+        <th style="width: 30%;">Đánh giá</th>
       </tr>
     </thead>
     <tbody>
@@ -410,7 +470,7 @@ export function printSingleStudent(
         <tr>
           <td>${topic.topicName}</td>
           <td class="center">${topic.completedCount}/${topic.criteriaCount} tiêu chí</td>
-          <td class="center">${renderStars(topic.averageRating)}</td>
+          <td class="center">${getRatingLabel(topic.averageRating)}</td>
         </tr>
       `).join('')}
     </tbody>
@@ -439,8 +499,7 @@ export function printSingleStudent(
 </html>
   `;
 
-  printWindow.document.write(html);
-  printWindow.document.close();
+  openPrintWindow(html);
 }
 
 export function printAllStudents(
@@ -462,30 +521,50 @@ export function printAllStudents(
       dateRange = `${format(new Date(startDate), 'dd/MM/yyyy')} - ${format(new Date(endDate), 'dd/MM/yyyy')}`;
     } else if (endDate) {
       dateRange = `Đến ${format(new Date(endDate), 'dd/MM/yyyy')}`;
+    } else if (startDate) {
+      dateRange = `Từ ${format(new Date(startDate), 'dd/MM/yyyy')}`;
     }
   } catch (e) {
     console.error('Error formatting date:', e);
     dateRange = 'Tất cả';
   }
 
-  const renderStars = (rating: number): string => {
+  const getRatingLabel = (rating: number): string => {
     if (rating === 0) return '-';
-    const fullStars = Math.floor(rating);
-    const hasHalfStar = rating % 1 >= 0.5;
-    let stars = '★'.repeat(fullStars);
-    if (hasHalfStar) stars += '½';
-    stars += '☆'.repeat(3 - Math.ceil(rating));
-    return `${stars} (${rating.toFixed(1)})`;
+    const rounded = Math.round(rating);
+    switch (rounded) {
+      case 1: return 'Chưa đạt';
+      case 2: return 'Hoàn thành';
+      case 3: return 'Tốt';
+      case 4: return 'Rất tốt';
+      default: return 'Hoàn thành';
+    }
   };
 
-  const printWindow = window.open('about:blank', '_blank', 'width=1000,height=700');
-  if (!printWindow) {
-    alert('Vui lòng cho phép popup để in PDF');
-    return;
-  }
+  // Calculate overall result based on topic ratings
+  const calculateOverallResult = (studentTopics: { averageRating: number }[]): string => {
+    const ratings = studentTopics.map(t => t.averageRating).filter(r => r > 0);
+    if (ratings.length === 0) return '-';
 
-  // Wait for window to be ready
-  printWindow.document.open();
+    const totalTopics = ratings.length;
+    const goodOrBetter = ratings.filter(r => r >= 3).length;
+    const notCompleted = ratings.filter(r => Math.round(r) === 1).length;
+
+    if (goodOrBetter >= (totalTopics * 3 / 4) && notCompleted === 0) {
+      return 'Hoàn thành tốt';
+    }
+    if (notCompleted >= (totalTopics / 2)) {
+      return 'Chưa hoàn thành';
+    }
+    return 'Hoàn thành';
+  };
+
+  let exportDate = '';
+  try {
+    exportDate = format(new Date(), 'dd/MM/yyyy HH:mm');
+  } catch (e) {
+    exportDate = new Date().toLocaleString('vi-VN');
+  }
 
   const html = `
 <!DOCTYPE html>
@@ -596,7 +675,7 @@ export function printAllStudents(
     <h1>TỔNG HỢP CẢ LỚP</h1>
     <div class="subtitle">${gradeName} - ${className}</div>
     <div class="date-range">Khoảng thời gian: ${dateRange}</div>
-    <div class="export-date">Ngày xuất: ${format(new Date(), 'dd/MM/yyyy HH:mm')}</div>
+    <div class="export-date">Ngày xuất: ${exportDate}</div>
   </div>
 
   <table>
@@ -605,7 +684,7 @@ export function printAllStudents(
         <th style="width: 120px;">Họ tên</th>
         <th style="width: 50px;">Máy</th>
         ${topics.map(t => `<th>${t.name}</th>`).join('')}
-        <th style="width: 80px;">TB</th>
+        <th style="width: 100px;">Kết quả</th>
       </tr>
     </thead>
     <tbody>
@@ -614,9 +693,9 @@ export function printAllStudents(
           <td class="student-name">${student.name}</td>
           <td class="computer-name">${student.computerName || '-'}</td>
           ${student.topics.map(topic => `
-            <td>${renderStars(topic.averageRating)}</td>
+            <td>${getRatingLabel(topic.averageRating)}</td>
           `).join('')}
-          <td class="average-col">${renderStars(student.overallAverage)}</td>
+          <td class="average-col">${calculateOverallResult(student.topics)}</td>
         </tr>
       `).join('')}
     </tbody>
@@ -644,6 +723,5 @@ export function printAllStudents(
 </html>
   `;
 
-  printWindow.document.write(html);
-  printWindow.document.close();
+  openPrintWindow(html);
 }

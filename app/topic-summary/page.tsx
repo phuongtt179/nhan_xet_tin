@@ -187,41 +187,40 @@ export default function TopicSummaryPage() {
     }
   }
 
-  function renderStars(rating: number) {
+  function getRatingLabel(rating: number) {
     if (rating === 0) {
       return <span className="text-gray-400 text-xs">-</span>;
     }
-
-    const fullStars = Math.floor(rating);
-    const hasHalfStar = rating % 1 >= 0.5;
-
+    const rounded = Math.round(rating);
+    const labels: { [key: number]: { text: string; color: string } } = {
+      1: { text: 'Chưa đạt', color: 'text-red-600 bg-red-50' },
+      2: { text: 'Hoàn thành', color: 'text-blue-600 bg-blue-50' },
+      3: { text: 'Tốt', color: 'text-green-600 bg-green-50' },
+      4: { text: 'Rất tốt', color: 'text-yellow-600 bg-yellow-50' },
+    };
+    const label = labels[rounded] || labels[2];
     return (
-      <div className="flex items-center justify-center gap-0.5">
-        {[1, 2, 3].map(i => {
-          if (i <= fullStars) {
-            return (
-              <Star
-                key={i}
-                size={14}
-                className="fill-yellow-400 text-yellow-400"
-              />
-            );
-          } else if (i === fullStars + 1 && hasHalfStar) {
-            return (
-              <div key={i} className="relative">
-                <Star size={14} className="text-gray-300" />
-                <div className="absolute inset-0 overflow-hidden w-1/2">
-                  <Star size={14} className="fill-yellow-400 text-yellow-400" />
-                </div>
-              </div>
-            );
-          } else {
-            return <Star key={i} size={14} className="text-gray-300" />;
-          }
-        })}
-        <span className="text-xs text-gray-600 ml-1">({rating.toFixed(1)})</span>
-      </div>
+      <span className={`px-2 py-1 rounded text-xs font-semibold ${label.color}`}>
+        {label.text}
+      </span>
     );
+  }
+
+  function calculateResult(criteriaRatings: { [key: string]: number }) {
+    const ratings = Object.values(criteriaRatings).filter(r => r > 0);
+    if (ratings.length === 0) return { text: '-', color: 'text-gray-400' };
+
+    const totalCriteria = ratings.length;
+    const goodOrBetter = ratings.filter(r => r >= 3).length;
+    const notCompleted = ratings.filter(r => r === 1).length;
+
+    if (goodOrBetter >= (totalCriteria * 3 / 4) && notCompleted === 0) {
+      return { text: 'Hoàn thành tốt', color: 'text-green-600 bg-green-100' };
+    }
+    if (notCompleted >= (totalCriteria / 2)) {
+      return { text: 'Chưa hoàn thành', color: 'text-red-600 bg-red-100' };
+    }
+    return { text: 'Hoàn thành', color: 'text-blue-600 bg-blue-100' };
   }
 
   function exportTopicSummaryPDF() {
@@ -406,36 +405,39 @@ export default function TopicSummaryPage() {
                   </th>
                 ))}
                 <th className="px-3 lg:px-4 py-3 text-center text-xs lg:text-sm font-bold text-gray-700 bg-blue-50 min-w-[120px]">
-                  Trung bình
+                  Kết quả
                 </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200">
-              {summaryData.map((student) => (
-                <tr key={student.studentId} className="hover:bg-gray-50">
-                  <td className="sticky left-0 z-10 bg-white hover:bg-gray-50 px-3 lg:px-4 py-3 border-r-2 border-gray-200">
-                    <div className="text-sm lg:text-base font-semibold text-gray-800">
-                      {student.studentName}
-                    </div>
-                    {student.computerName && (
-                      <div className="text-xs text-gray-500">Máy: {student.computerName}</div>
-                    )}
-                  </td>
-                  {criteria.map((criterion) => (
-                    <td
-                      key={criterion.id}
-                      className="px-3 lg:px-4 py-3 text-center border-r border-gray-200"
-                    >
-                      {renderStars(student.criteriaRatings[criterion.id] || 0)}
+              {summaryData.map((student) => {
+                const result = calculateResult(student.criteriaRatings);
+                return (
+                  <tr key={student.studentId} className="hover:bg-gray-50">
+                    <td className="sticky left-0 z-10 bg-white hover:bg-gray-50 px-3 lg:px-4 py-3 border-r-2 border-gray-200">
+                      <div className="text-sm lg:text-base font-semibold text-gray-800">
+                        {student.studentName}
+                      </div>
+                      {student.computerName && (
+                        <div className="text-xs text-gray-500">Máy: {student.computerName}</div>
+                      )}
                     </td>
-                  ))}
-                  <td className="px-3 lg:px-4 py-3 text-center bg-blue-50">
-                    <div className="font-bold text-blue-600">
-                      {renderStars(student.totalAverage)}
-                    </div>
-                  </td>
-                </tr>
-              ))}
+                    {criteria.map((criterion) => (
+                      <td
+                        key={criterion.id}
+                        className="px-3 lg:px-4 py-3 text-center border-r border-gray-200"
+                      >
+                        {getRatingLabel(student.criteriaRatings[criterion.id] || 0)}
+                      </td>
+                    ))}
+                    <td className="px-3 lg:px-4 py-3 text-center bg-blue-50">
+                      <span className={`px-2 py-1 rounded text-xs font-bold ${result.color}`}>
+                        {result.text}
+                      </span>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -446,9 +448,10 @@ export default function TopicSummaryPage() {
         <div className="mt-6 bg-blue-50 border-2 border-blue-200 rounded-lg p-4">
           <h3 className="font-semibold text-gray-800 mb-2 text-sm lg:text-base">Ghi chú:</h3>
           <ul className="space-y-1 text-xs lg:text-sm text-gray-700">
-            <li>• Điểm hiển thị là điểm trung bình của tất cả lần đánh giá trong khoảng thời gian đã chọn</li>
-            <li>• Cột &quot;Trung bình&quot; là điểm trung bình của tất cả tiêu chí</li>
-            <li>• Dấu &quot;-&quot; nghĩa là chưa có đánh giá nào</li>
+            <li>• <span className="text-red-600 font-semibold">Chưa đạt</span> = 1 điểm, <span className="text-blue-600 font-semibold">Hoàn thành</span> = 2 điểm, <span className="text-green-600 font-semibold">Tốt</span> = 3 điểm, <span className="text-yellow-600 font-semibold">Rất tốt</span> = 4 điểm</li>
+            <li>• <span className="font-semibold">Hoàn thành tốt</span>: ≥3/4 tiêu chí đạt Tốt+ và không có Chưa đạt</li>
+            <li>• <span className="font-semibold">Chưa hoàn thành</span>: ≥1/2 tiêu chí Chưa đạt</li>
+            <li>• Dấu &quot;-&quot; nghĩa là chưa có đánh giá</li>
           </ul>
         </div>
       )}

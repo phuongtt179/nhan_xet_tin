@@ -16,7 +16,8 @@
       "Bash(ping:*)",
       "Bash(taskkill:*)",
       "Bash(powershell -Command \"Stop-Process -Id 12396 -Force\")",
-      "Bash(del nul)"
+      "Bash(del nul)",
+      "Bash(cmd /c \"taskkill /F /PID 6128\")"
     ]
   }
 }
