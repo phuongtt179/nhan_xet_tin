@@ -14,6 +14,15 @@ interface StudentEvaluation {
   isAbsent: boolean; // true nếu học sinh vắng mặt
 }
 
+// Định nghĩa vị trí máy tính trong lớp học
+const ROWS = ['A', 'B', 'C', 'D', 'E'];
+const COLS = [1, 2, 3, 4, 5, 6, 7, 8];
+
+interface SeatPosition {
+  computerName: string;
+  student: StudentEvaluation | null;
+}
+
 export default function EvaluationsPage() {
   const [classes, setClasses] = useState<Class[]>([]);
   const [topics, setTopics] = useState<Topic[]>([]);
@@ -272,21 +281,42 @@ export default function EvaluationsPage() {
     }
   }
 
-  function getRatingLabel(rating: number): { text: string; color: string } {
+  function getRatingLabel(rating: number, short: boolean = false): { text: string; color: string; bgColor: string } {
     switch (rating) {
       case 0:
-        return { text: 'Vắng', color: 'bg-gray-100 text-gray-500' };
+        return { text: short ? 'V' : 'Vắng', color: 'text-gray-500', bgColor: 'bg-gray-200' };
       case 1:
-        return { text: 'Chưa đạt', color: 'bg-red-100 text-red-800' };
+        return { text: short ? 'C' : 'Chưa đạt', color: 'text-white', bgColor: 'bg-red-500' };
       case 2:
-        return { text: 'Hoàn thành', color: 'bg-blue-100 text-blue-800' };
+        return { text: short ? 'H' : 'Hoàn thành', color: 'text-white', bgColor: 'bg-blue-500' };
       case 3:
-        return { text: 'Tốt', color: 'bg-green-100 text-green-800' };
+        return { text: short ? 'T' : 'Tốt', color: 'text-white', bgColor: 'bg-green-500' };
       case 4:
-        return { text: 'Rất tốt', color: 'bg-yellow-100 text-yellow-800' };
+        return { text: short ? 'RT' : 'Rất tốt', color: 'text-white', bgColor: 'bg-yellow-500' };
       default:
-        return { text: 'Hoàn thành', color: 'bg-blue-100 text-blue-800' };
+        return { text: short ? 'H' : 'Hoàn thành', color: 'text-white', bgColor: 'bg-blue-500' };
     }
+  }
+
+  // Tạo bản đồ vị trí máy -> học sinh
+  function getSeatMap(): Map<string, StudentEvaluation | null> {
+    const seatMap = new Map<string, StudentEvaluation | null>();
+
+    // Khởi tạo tất cả vị trí là null
+    ROWS.forEach(row => {
+      COLS.forEach(col => {
+        seatMap.set(`${row}${col}`, null);
+      });
+    });
+
+    // Map học sinh vào vị trí tương ứng
+    students.forEach(student => {
+      if (student.computerName) {
+        seatMap.set(student.computerName, student);
+      }
+    });
+
+    return seatMap;
   }
 
   const canEvaluate = selectedClassId && selectedCriterionId && students.length > 0;
@@ -406,7 +436,7 @@ export default function EvaluationsPage() {
         )}
       </div>
 
-      {/* Evaluation Table */}
+      {/* Evaluation Grid */}
       {loading ? (
         <div className="flex justify-center items-center py-12">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
@@ -423,81 +453,143 @@ export default function EvaluationsPage() {
         <div className="text-center py-12 bg-white rounded-lg shadow">
           <p className="text-gray-500 text-sm lg:text-lg">Vui lòng chọn tiêu chí để đánh giá</p>
         </div>
-      ) : students.length === 0 ? (
-        <div className="text-center py-12 bg-white rounded-lg shadow">
-          <p className="text-gray-500 text-sm lg:text-lg">Lớp này chưa có học sinh</p>
-        </div>
       ) : (
         <>
-          <div className="bg-white rounded-lg shadow overflow-x-auto">
-            <table className="w-full">
-              <thead className="bg-gray-50 border-b-2 border-gray-200">
-                <tr>
-                  <th className="px-2 lg:px-4 py-3 text-center text-xs lg:text-sm font-bold text-gray-700 w-12 lg:w-16">
-                    STT
-                  </th>
-                  <th className="px-2 lg:px-4 py-3 text-left text-xs lg:text-sm font-bold text-gray-700">
-                    Họ và tên
-                  </th>
-                  <th className="px-2 lg:px-4 py-3 text-center text-xs lg:text-sm font-bold text-gray-700 w-20 lg:w-24">
-                    Tên máy
-                  </th>
-                  <th className="px-2 lg:px-4 py-3 text-center text-xs lg:text-sm font-bold text-gray-700 w-32 lg:w-40">
-                    Kết quả
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-200">
-                {students.map((student, index) => {
-                  const { text, color } = getRatingLabel(student.rating);
-                  return (
-                    <tr
-                      key={student.studentId}
-                      onClick={() => cycleRating(student.studentId)}
-                      className={`transition-colors ${
-                        student.isAbsent
-                          ? 'opacity-50 cursor-not-allowed bg-gray-50'
-                          : 'hover:bg-gray-50 cursor-pointer active:bg-gray-100'
-                      }`}
-                    >
-                      <td className="px-2 lg:px-4 py-3 text-center text-xs lg:text-sm text-gray-600">
-                        {index + 1}
-                      </td>
-                      <td className="px-2 lg:px-4 py-3 text-xs lg:text-base font-semibold text-gray-800">
-                        {student.studentName}
-                      </td>
-                      <td className="px-2 lg:px-4 py-3 text-center">
-                        {student.computerName ? (
-                          <span className="text-xs lg:text-sm font-semibold text-gray-700">
-                            {student.computerName}
-                          </span>
-                        ) : (
-                          <span className="text-gray-400 text-xs">-</span>
-                        )}
-                      </td>
-                      <td className="px-2 lg:px-4 py-3 text-center">
-                        <span
-                          className={`inline-block px-3 py-1 rounded-full text-xs lg:text-sm font-semibold ${color}`}
-                        >
-                          {text}
+          {/* Desktop Grid: 5 rows (A-E) x 8 columns (1-8) */}
+          <div className="hidden lg:block bg-white rounded-lg shadow p-4">
+            <div className="mb-4 text-center">
+              <span className="text-sm text-gray-500">Bảng giáo viên</span>
+            </div>
+
+            {/* Seat grid */}
+            {ROWS.map(row => {
+              const seatMap = getSeatMap();
+              return (
+                <div key={row} className="grid grid-cols-8 gap-2 mb-2">
+                  {COLS.map(col => {
+                    const computerName = `${row}${col}`;
+                    const student = seatMap.get(computerName);
+                    const isEmpty = !student;
+                    const isAbsent = student?.isAbsent;
+                    const { text, color, bgColor } = student
+                      ? getRatingLabel(student.rating, true)
+                      : { text: '-', color: 'text-gray-400', bgColor: 'bg-gray-100' };
+
+                    return (
+                      <div
+                        key={computerName}
+                        onClick={() => student && !student.isAbsent && cycleRating(student.studentId)}
+                        className={`
+                          relative p-2 rounded-lg border-2 min-h-[70px] flex flex-col items-center justify-center
+                          transition-all duration-150
+                          ${isEmpty
+                            ? 'border-dashed border-gray-300 bg-gray-50 opacity-40'
+                            : isAbsent
+                              ? 'border-gray-300 bg-gray-100 opacity-50 cursor-not-allowed'
+                              : `border-gray-300 ${bgColor} cursor-pointer hover:scale-105 hover:shadow-md active:scale-95`
+                          }
+                        `}
+                      >
+                        <span className={`text-xs font-medium ${isEmpty || isAbsent ? 'text-gray-400' : color}`}>
+                          {computerName}
                         </span>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                        {student && (
+                          <>
+                            <span className={`text-lg font-bold ${color}`}>
+                              {text}
+                            </span>
+                            <span className={`text-[10px] truncate max-w-full ${isEmpty || isAbsent ? 'text-gray-400' : color} opacity-90`}>
+                              {student.studentName}
+                            </span>
+                          </>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Mobile Grid: 8 rows (1-8) x 5 columns (A-E) - transposed */}
+          <div className="lg:hidden bg-white rounded-lg shadow p-3">
+            <div className="mb-3 text-center">
+              <span className="text-xs text-gray-500">Bảng giáo viên</span>
+            </div>
+
+            {/* Seat grid - transposed */}
+            {COLS.map(col => {
+              const seatMap = getSeatMap();
+              return (
+                <div key={col} className="grid grid-cols-5 gap-1 mb-1">
+                  {ROWS.map(row => {
+                    const computerName = `${row}${col}`;
+                    const student = seatMap.get(computerName);
+                    const isEmpty = !student;
+                    const isAbsent = student?.isAbsent;
+                    const { text, color, bgColor } = student
+                      ? getRatingLabel(student.rating, true)
+                      : { text: '-', color: 'text-gray-400', bgColor: 'bg-gray-100' };
+
+                    return (
+                      <div
+                        key={computerName}
+                        onClick={() => student && !student.isAbsent && cycleRating(student.studentId)}
+                        className={`
+                          relative p-1 rounded-md border min-h-[50px] flex flex-col items-center justify-center
+                          transition-all duration-150
+                          ${isEmpty
+                            ? 'border-dashed border-gray-300 bg-gray-50 opacity-40'
+                            : isAbsent
+                              ? 'border-gray-300 bg-gray-100 opacity-50'
+                              : `border-gray-300 ${bgColor} cursor-pointer active:scale-95`
+                          }
+                        `}
+                      >
+                        <span className={`text-[10px] font-medium ${isEmpty || isAbsent ? 'text-gray-400' : color}`}>
+                          {computerName}
+                        </span>
+                        {student && (
+                          <span className={`text-base font-bold ${color}`}>
+                            {text}
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })}
           </div>
 
           {/* Legend */}
-          <div className="mt-4 lg:mt-6 bg-blue-50 border-2 border-blue-200 rounded-lg p-4">
-            <h3 className="font-semibold text-gray-800 mb-2 text-sm lg:text-base">Hướng dẫn:</h3>
-            <ul className="space-y-1 text-xs lg:text-sm text-gray-700">
-              <li>• Nhấp vào dòng học sinh để thay đổi mức đánh giá</li>
-              <li>• Chu kỳ: Hoàn thành → Tốt → Rất tốt → Chưa đạt → Hoàn thành</li>
-              <li>• Mặc định: Hoàn thành</li>
-              <li>• Nhấn nút &quot;Lưu đánh giá&quot; để lưu toàn bộ bảng</li>
-            </ul>
+          <div className="mt-4 lg:mt-6 bg-blue-50 border-2 border-blue-200 rounded-lg p-3 lg:p-4">
+            <h3 className="font-semibold text-gray-800 mb-2 text-xs lg:text-base">Chú thích:</h3>
+            <div className="flex flex-wrap gap-2 lg:gap-4 text-xs lg:text-sm">
+              <div className="flex items-center gap-1">
+                <span className="w-6 h-6 lg:w-8 lg:h-8 rounded flex items-center justify-center bg-blue-500 text-white font-bold text-xs lg:text-sm">H</span>
+                <span className="text-gray-700">Hoàn thành</span>
+              </div>
+              <div className="flex items-center gap-1">
+                <span className="w-6 h-6 lg:w-8 lg:h-8 rounded flex items-center justify-center bg-green-500 text-white font-bold text-xs lg:text-sm">T</span>
+                <span className="text-gray-700">Tốt</span>
+              </div>
+              <div className="flex items-center gap-1">
+                <span className="w-6 h-6 lg:w-8 lg:h-8 rounded flex items-center justify-center bg-yellow-500 text-white font-bold text-xs lg:text-sm">RT</span>
+                <span className="text-gray-700">Rất tốt</span>
+              </div>
+              <div className="flex items-center gap-1">
+                <span className="w-6 h-6 lg:w-8 lg:h-8 rounded flex items-center justify-center bg-red-500 text-white font-bold text-xs lg:text-sm">C</span>
+                <span className="text-gray-700">Chưa đạt</span>
+              </div>
+              <div className="flex items-center gap-1">
+                <span className="w-6 h-6 lg:w-8 lg:h-8 rounded flex items-center justify-center bg-gray-200 text-gray-500 font-bold text-xs lg:text-sm">V</span>
+                <span className="text-gray-700">Vắng</span>
+              </div>
+            </div>
+            <p className="mt-2 text-xs lg:text-sm text-gray-600">
+              Nhấp vào ô để thay đổi: H → T → RT → C → H
+            </p>
           </div>
         </>
       )}
