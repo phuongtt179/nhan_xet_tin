@@ -143,13 +143,13 @@ export default function EvaluationsPage() {
         throw studentsError;
       }
 
-      // Load existing evaluations for this criterion and date
+      // Load existing evaluations for this criterion (all dates, ordered by date desc)
       const { data: evaluationsData, error: evaluationsError } = await supabase
         .from('evaluations')
-        .select('student_id, rating')
+        .select('student_id, rating, evaluated_date')
         .eq('class_id', selectedClassId)
         .eq('criterion_id', selectedCriterionId)
-        .eq('evaluated_date', selectedDate);
+        .order('evaluated_date', { ascending: false });
 
       if (evaluationsError) {
         console.error('Error loading evaluations:', evaluationsError);
@@ -170,7 +170,13 @@ export default function EvaluationsPage() {
 
       // Merge data
       const studentEvals: StudentEvaluation[] = (studentsData || []).map(student => {
-        const existing = evaluationsData?.find(e => e.student_id === student.id);
+        // Ưu tiên lấy đánh giá của ngày hiện tại, nếu không có thì lấy đánh giá gần nhất
+        const todayEval = evaluationsData?.find(
+          e => e.student_id === student.id && e.evaluated_date === selectedDate
+        );
+        const latestEval = evaluationsData?.find(e => e.student_id === student.id);
+        const existing = todayEval || latestEval;
+
         const attendance = attendanceData?.find(a => a.student_id === student.id);
         const isAbsent = attendance?.status === 'absent';
 
@@ -288,13 +294,13 @@ export default function EvaluationsPage() {
       case 1:
         return { text: short ? 'C' : 'Chưa đạt', color: 'text-white', bgColor: 'bg-red-500' };
       case 2:
-        return { text: short ? 'H' : 'Hoàn thành', color: 'text-white', bgColor: 'bg-blue-500' };
+        return { text: short ? 'H' : 'Hoàn thành', color: 'text-white', bgColor: 'bg-sky-500' };
       case 3:
         return { text: short ? 'T' : 'Tốt', color: 'text-white', bgColor: 'bg-green-500' };
       case 4:
         return { text: short ? 'RT' : 'Rất tốt', color: 'text-white', bgColor: 'bg-yellow-500' };
       default:
-        return { text: short ? 'H' : 'Hoàn thành', color: 'text-white', bgColor: 'bg-blue-500' };
+        return { text: short ? 'H' : 'Hoàn thành', color: 'text-white', bgColor: 'bg-sky-500' };
     }
   }
 
@@ -567,7 +573,7 @@ export default function EvaluationsPage() {
             <h3 className="font-semibold text-gray-800 mb-2 text-xs lg:text-base">Chú thích:</h3>
             <div className="flex flex-wrap gap-2 lg:gap-4 text-xs lg:text-sm">
               <div className="flex items-center gap-1">
-                <span className="w-6 h-6 lg:w-8 lg:h-8 rounded flex items-center justify-center bg-blue-500 text-white font-bold text-xs lg:text-sm">H</span>
+                <span className="w-6 h-6 lg:w-8 lg:h-8 rounded flex items-center justify-center bg-sky-500 text-white font-bold text-xs lg:text-sm">H</span>
                 <span className="text-gray-700">Hoàn thành</span>
               </div>
               <div className="flex items-center gap-1">

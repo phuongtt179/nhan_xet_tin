@@ -19,7 +19,9 @@ import {
   ExternalLink,
   Menu,
   X,
-  CalendarCheck
+  CalendarCheck,
+  Backpack,
+  Package
 } from 'lucide-react';
 
 const navItems = [
@@ -32,10 +34,12 @@ const navItems = [
   { href: '/criteria', icon: CheckSquare, label: 'Tiêu chí' },
   { href: '/evaluation-levels', icon: Star, label: 'Mức đánh giá' },
   { href: '/attendance', icon: ClipboardList, label: 'Điểm danh' },
+  { href: '/equipment-check', icon: Backpack, label: 'Kiểm tra đồ dùng' },
   { href: '/evaluations', icon: ClipboardCheck, label: 'Đánh giá' },
   { href: '/topic-summary', icon: BarChart2, label: 'Tổng hợp chủ đề' },
   { href: '/student-summary', icon: UserCheck, label: 'Tổng hợp học sinh' },
   { href: '/attendance-summary', icon: CalendarCheck, label: 'Thống kê buổi học' },
+  { href: '/equipment-summary', icon: Package, label: 'Thống kê đồ dùng' },
 ];
 
 // Mobile bottom navigation - only show 4 items
@@ -43,7 +47,7 @@ const mobileNavItems = [
   { href: '/', icon: Home, label: 'Tổng quan' },
   { href: '/attendance', icon: ClipboardList, label: 'Điểm danh' },
   { href: '/evaluations', icon: ClipboardCheck, label: 'Đánh giá' },
-  { href: '/topic-summary', icon: BarChart2, label: 'Tổng hợp' },
+  { href: '/equipment-check', icon: Backpack, label: 'Đồ dùng' },
 ];
 
 export default function Sidebar() {
