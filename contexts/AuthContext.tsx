@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 import { supabase } from '@/lib/supabase';
-import { User, TeacherAssignment } from '@/lib/types';
+import { User, TeacherAssignment, Subject } from '@/lib/types';
 
 interface AuthContextType {
   user: User | null;
@@ -11,7 +11,8 @@ interface AuthContextType {
   login: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
   logout: () => void;
   isAdmin: boolean;
-  getAssignedClassIds: (schoolYear?: string) => string[];
+  getAssignedClassIds: (subjectId?: string) => string[];
+  getAssignedSubjects: () => Subject[];
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -80,15 +81,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     localStorage.removeItem('user');
   }
 
-  function getAssignedClassIds(schoolYear?: string): string[] {
+  function getAssignedClassIds(subjectId?: string): string[] {
     if (!user) return [];
     if (user.role === 'admin') return []; // Admin có quyền tất cả
 
     let filtered = assignments;
-    if (schoolYear) {
-      filtered = assignments.filter(a => a.school_year === schoolYear);
+    if (subjectId) {
+      filtered = assignments.filter(a => a.subject_id === subjectId);
     }
     return [...new Set(filtered.map(a => a.class_id))];
+  }
+
+  function getAssignedSubjects(): Subject[] {
+    if (!user) return [];
+    if (user.role === 'admin') return []; // Admin có quyền tất cả
+
+    // Get unique subjects from assignments
+    const subjectsMap = new Map<string, Subject>();
+    assignments.forEach(a => {
+      if (a.subjects && !subjectsMap.has(a.subject_id)) {
+        subjectsMap.set(a.subject_id, a.subjects);
+      }
+    });
+    return Array.from(subjectsMap.values());
   }
 
   const value: AuthContextType = {
@@ -99,6 +114,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     logout,
     isAdmin: user?.role === 'admin',
     getAssignedClassIds,
+    getAssignedSubjects,
   };
 
   return (

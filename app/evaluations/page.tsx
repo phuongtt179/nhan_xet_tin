@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
-import { Class, Topic, Criterion, Student } from '@/lib/types';
+import { Class, Topic, Criterion, Student, Subject } from '@/lib/types';
 import { useAuth } from '@/contexts/AuthContext';
 import { Save, ChevronDown, ChevronUp } from 'lucide-react';
 import { format } from 'date-fns';
@@ -25,7 +25,7 @@ interface SeatPosition {
 }
 
 export default function EvaluationsPage() {
-  const { user, isAdmin } = useAuth();
+  const { user, isAdmin, getAssignedSubjects, getAssignedClassIds } = useAuth();
   const [classes, setClasses] = useState<Class[]>([]);
   const [topics, setTopics] = useState<Topic[]>([]);
   const [criteria, setCriteria] = useState<Criterion[]>([]);
@@ -39,41 +39,52 @@ export default function EvaluationsPage() {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [isControlsCollapsed, setIsControlsCollapsed] = useState(false);
-  const [assignedClassIds, setAssignedClassIds] = useState<string[]>([]);
+
+  // Subject selection for teachers with multiple subjects
+  const [selectedSubjectId, setSelectedSubjectId] = useState<string>('');
+  const [assignedSubjects, setAssignedSubjects] = useState<Subject[]>([]);
 
   useEffect(() => {
     if (user && !isAdmin) {
-      loadAssignedClasses();
-    } else {
-      loadClasses();
+      // Load subjects assigned to this teacher
+      const subjects = getAssignedSubjects();
+      setAssignedSubjects(subjects);
+      // Auto-select if only one subject
+      if (subjects.length === 1) {
+        setSelectedSubjectId(subjects[0].id);
+      }
+    } else if (isAdmin) {
+      // Admin: load all subjects
+      loadAllSubjects();
     }
   }, [user, isAdmin]);
 
   useEffect(() => {
-    if (assignedClassIds.length > 0 || isAdmin) {
+    // Load classes when subject is selected (for teachers) or always for admin
+    if (isAdmin || selectedSubjectId) {
       loadClasses();
+    } else if (!isAdmin && assignedSubjects.length > 0 && !selectedSubjectId) {
+      // Teacher hasn't selected a subject yet
+      setClasses([]);
     }
-  }, [assignedClassIds]);
+  }, [selectedSubjectId, isAdmin]);
 
-  async function loadAssignedClasses() {
-    if (!user) return;
+  async function loadAllSubjects() {
     try {
       const { data, error } = await supabase
-        .from('teacher_assignments')
-        .select('class_id');
+        .from('subjects')
+        .select('*')
+        .eq('is_active', true)
+        .order('name');
 
       if (error) throw error;
-
-      // Filter by user's assignments
-      const { data: userAssignments } = await supabase
-        .from('teacher_assignments')
-        .select('class_id')
-        .eq('user_id', user.id);
-
-      const classIds = [...new Set(userAssignments?.map(a => a.class_id) || [])];
-      setAssignedClassIds(classIds);
+      setAssignedSubjects(data || []);
+      // Auto-select first subject for admin if available
+      if (data && data.length > 0) {
+        setSelectedSubjectId(data[0].id);
+      }
     } catch (error) {
-      console.error('Error loading assigned classes:', error);
+      console.error('Error loading subjects:', error);
     }
   }
 
@@ -106,6 +117,9 @@ export default function EvaluationsPage() {
 
   async function loadClasses() {
     try {
+      // Get assigned class IDs filtered by selected subject
+      const assignedClassIds = isAdmin ? null : getAssignedClassIds(selectedSubjectId);
+
       let query = supabase
         .from('classes')
         .select(`
@@ -118,9 +132,9 @@ export default function EvaluationsPage() {
         .order('name');
 
       // Filter by assigned classes if not admin
-      if (!isAdmin && assignedClassIds.length > 0) {
+      if (!isAdmin && assignedClassIds && assignedClassIds.length > 0) {
         query = query.in('id', assignedClassIds);
-      } else if (!isAdmin && assignedClassIds.length === 0) {
+      } else if (!isAdmin && (!assignedClassIds || assignedClassIds.length === 0)) {
         setClasses([]);
         return;
       }
@@ -144,11 +158,18 @@ export default function EvaluationsPage() {
 
       if (!classData) return;
 
-      const { data, error } = await supabase
+      let query = supabase
         .from('topics')
         .select('*')
         .eq('grade_id', classData.grade_id)
         .order('name');
+
+      // Filter by subject_id if selected
+      if (selectedSubjectId) {
+        query = query.eq('subject_id', selectedSubjectId);
+      }
+
+      const { data, error } = await query;
 
       if (error) throw error;
       setTopics(data || []);
@@ -406,6 +427,32 @@ export default function EvaluationsPage() {
         {/* Collapsible content */}
         {!isControlsCollapsed && (
           <div className="px-4 lg:px-6 pb-4 lg:pb-6 space-y-4 border-t">
+            {/* Subject selector - show when multiple subjects available */}
+            {assignedSubjects.length > 1 && (
+              <div className="mt-4">
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  Môn học <span className="text-red-500">*</span>
+                </label>
+                <select
+                  value={selectedSubjectId}
+                  onChange={(e) => {
+                    setSelectedSubjectId(e.target.value);
+                    setSelectedClassId('');
+                    setSelectedTopicId('');
+                    setSelectedCriterionId('');
+                  }}
+                  className="w-full px-3 lg:px-4 py-2 border-2 border-blue-300 rounded-lg focus:border-blue-500 focus:outline-none text-sm lg:text-base bg-blue-50"
+                >
+                  <option value="">-- Chọn môn học --</option>
+                  {assignedSubjects.map((subject) => (
+                    <option key={subject.id} value={subject.id}>
+                      {subject.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-4">
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-2">
@@ -418,7 +465,8 @@ export default function EvaluationsPage() {
                     setSelectedTopicId('');
                     setSelectedCriterionId('');
                   }}
-                  className="w-full px-3 lg:px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none text-sm lg:text-base"
+                  disabled={!isAdmin && assignedSubjects.length > 1 && !selectedSubjectId}
+                  className="w-full px-3 lg:px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none text-sm lg:text-base disabled:bg-gray-100"
                 >
                   <option value="">-- Chọn lớp --</option>
                   {classes.map((classItem) => (
@@ -493,6 +541,10 @@ export default function EvaluationsPage() {
       {loading ? (
         <div className="flex justify-center items-center py-12">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+        </div>
+      ) : !isAdmin && assignedSubjects.length > 1 && !selectedSubjectId ? (
+        <div className="text-center py-12 bg-white rounded-lg shadow">
+          <p className="text-gray-500 text-sm lg:text-lg">Vui lòng chọn môn học để bắt đầu</p>
         </div>
       ) : !selectedClassId ? (
         <div className="text-center py-12 bg-white rounded-lg shadow">

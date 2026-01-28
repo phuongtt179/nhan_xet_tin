@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
-import { Class } from '@/lib/types';
+import { Class, Subject } from '@/lib/types';
 import { format, startOfMonth, endOfMonth } from 'date-fns';
 import { vi } from 'date-fns/locale';
 import { ChevronDown, ChevronUp } from 'lucide-react';
@@ -21,7 +21,7 @@ const ROWS = ['A', 'B', 'C', 'D', 'E'];
 const COLS = [1, 2, 3, 4, 5, 6, 7, 8];
 
 export default function EquipmentSummaryPage() {
-  const { isAdmin, getAssignedClassIds } = useAuth();
+  const { isAdmin, getAssignedClassIds, getAssignedSubjects } = useAuth();
   const [classes, setClasses] = useState<Class[]>([]);
   const [schoolYears, setSchoolYears] = useState<string[]>([]);
   const [selectedYear, setSelectedYear] = useState<string>('2025-2026');
@@ -32,14 +32,52 @@ export default function EquipmentSummaryPage() {
   const [loading, setLoading] = useState(false);
   const [isControlsCollapsed, setIsControlsCollapsed] = useState(false);
 
-  useEffect(() => {
-    loadSchoolYears();
-  }, []);
+  // Subject selection for teachers with multiple subjects
+  const [selectedSubjectId, setSelectedSubjectId] = useState<string>('');
+  const [assignedSubjects, setAssignedSubjects] = useState<Subject[]>([]);
 
   useEffect(() => {
-    loadClasses();
+    loadSchoolYears();
+    if (!isAdmin) {
+      // Load subjects assigned to this teacher
+      const subjects = getAssignedSubjects();
+      setAssignedSubjects(subjects);
+      // Auto-select if only one subject
+      if (subjects.length === 1) {
+        setSelectedSubjectId(subjects[0].id);
+      }
+    } else {
+      // Admin: load all subjects
+      loadAllSubjects();
+    }
+  }, [isAdmin]);
+
+  useEffect(() => {
+    // Load classes when subject is selected (for teachers) or always for admin
+    if (isAdmin || selectedSubjectId || assignedSubjects.length <= 1) {
+      loadClasses();
+    }
     setSelectedClassId('');
-  }, [selectedYear]);
+  }, [selectedYear, selectedSubjectId, isAdmin]);
+
+  async function loadAllSubjects() {
+    try {
+      const { data, error } = await supabase
+        .from('subjects')
+        .select('*')
+        .eq('is_active', true)
+        .order('name');
+
+      if (error) throw error;
+      setAssignedSubjects(data || []);
+      // Auto-select first subject for admin if available
+      if (data && data.length > 0) {
+        setSelectedSubjectId(data[0].id);
+      }
+    } catch (error) {
+      console.error('Error loading subjects:', error);
+    }
+  }
 
   useEffect(() => {
     if (selectedClassId && startDate && endDate) {
@@ -69,7 +107,8 @@ export default function EquipmentSummaryPage() {
 
   async function loadClasses() {
     try {
-      const assignedClassIds = isAdmin ? null : getAssignedClassIds();
+      // Get assigned class IDs filtered by selected subject
+      const assignedClassIds = isAdmin ? null : getAssignedClassIds(selectedSubjectId);
 
       let query = supabase
         .from('classes')
@@ -190,50 +229,76 @@ export default function EquipmentSummaryPage() {
         </button>
 
         {!isControlsCollapsed && (
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 px-4 lg:px-6 pb-4 lg:pb-6">
-          <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-2">Năm học</label>
-            <select
-              value={selectedYear}
-              onChange={(e) => setSelectedYear(e.target.value)}
-              className="w-full px-3 py-2 border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none text-sm lg:text-base"
-            >
-              {schoolYears.map((year) => (
-                <option key={year} value={year}>{year}</option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-2">Lớp</label>
-            <select
-              value={selectedClassId}
-              onChange={(e) => setSelectedClassId(e.target.value)}
-              className="w-full px-3 py-2 border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none text-sm lg:text-base"
-            >
-              {classes.map((classItem) => (
-                <option key={classItem.id} value={classItem.id}>
-                  {(classItem as any).grades?.name} - {classItem.name}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-2">Từ ngày</label>
-            <input
-              type="date"
-              value={startDate}
-              onChange={(e) => setStartDate(e.target.value)}
-              className="w-full px-3 py-2 border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none text-sm lg:text-base"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-2">Đến ngày</label>
-            <input
-              type="date"
-              value={endDate}
-              onChange={(e) => setEndDate(e.target.value)}
-              className="w-full px-3 py-2 border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none text-sm lg:text-base"
-            />
+        <div className="px-4 lg:px-6 pb-4 lg:pb-6 space-y-4">
+          {/* Subject selector - show when multiple subjects available */}
+          {assignedSubjects.length > 1 && (
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-2">Môn học</label>
+              <select
+                value={selectedSubjectId}
+                onChange={(e) => {
+                  setSelectedSubjectId(e.target.value);
+                  setSelectedClassId('');
+                }}
+                className="w-full px-3 py-2 border-2 border-blue-300 rounded-lg focus:border-blue-500 focus:outline-none text-sm lg:text-base bg-blue-50"
+              >
+                <option value="">-- Chọn môn học --</option>
+                {assignedSubjects.map((subject) => (
+                  <option key={subject.id} value={subject.id}>
+                    {subject.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-2">Năm học</label>
+              <select
+                value={selectedYear}
+                onChange={(e) => setSelectedYear(e.target.value)}
+                className="w-full px-3 py-2 border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none text-sm lg:text-base"
+              >
+                {schoolYears.map((year) => (
+                  <option key={year} value={year}>{year}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-2">Lớp</label>
+              <select
+                value={selectedClassId}
+                onChange={(e) => setSelectedClassId(e.target.value)}
+                disabled={!isAdmin && assignedSubjects.length > 1 && !selectedSubjectId}
+                className="w-full px-3 py-2 border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none text-sm lg:text-base disabled:bg-gray-100"
+              >
+                <option value="">-- Chọn lớp --</option>
+                {classes.map((classItem) => (
+                  <option key={classItem.id} value={classItem.id}>
+                    {(classItem as any).grades?.name} - {classItem.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-2">Từ ngày</label>
+              <input
+                type="date"
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
+                className="w-full px-3 py-2 border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none text-sm lg:text-base"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-2">Đến ngày</label>
+              <input
+                type="date"
+                value={endDate}
+                onChange={(e) => setEndDate(e.target.value)}
+                className="w-full px-3 py-2 border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none text-sm lg:text-base"
+              />
+            </div>
           </div>
         </div>
         )}
@@ -264,6 +329,10 @@ export default function EquipmentSummaryPage() {
       {loading ? (
         <div className="flex justify-center items-center py-12">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+        </div>
+      ) : !isAdmin && assignedSubjects.length > 1 && !selectedSubjectId ? (
+        <div className="text-center py-12 bg-white rounded-lg shadow">
+          <p className="text-gray-500 text-sm lg:text-lg">Vui lòng chọn môn học để bắt đầu</p>
         </div>
       ) : !selectedClassId ? (
         <div className="text-center py-12 bg-white rounded-lg shadow">
