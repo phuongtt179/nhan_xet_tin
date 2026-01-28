@@ -102,8 +102,12 @@ export default function AssignmentsPage() {
       let query = supabase
         .from('teacher_assignments')
         .select('*')
-        .eq('school_year', selectedYear)
         .order('created_at', { ascending: false });
+
+      // Only filter by year if not "all"
+      if (selectedYear && selectedYear !== 'all') {
+        query = query.eq('school_year', selectedYear);
+      }
 
       if (selectedUserId) {
         query = query.eq('user_id', selectedUserId);

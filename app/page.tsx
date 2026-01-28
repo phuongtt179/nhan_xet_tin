@@ -6,6 +6,7 @@ import { Layers, BookOpen, Users, ClipboardList, TrendingUp, Calendar } from 'lu
 import Link from 'next/link';
 import { format, subDays } from 'date-fns';
 import { Class } from '@/lib/types';
+import { useAuth } from '@/contexts/AuthContext';
 
 interface Stats {
   totalGrades: number;
@@ -33,6 +34,7 @@ interface RecentAttendance {
 }
 
 export default function DashboardPage() {
+  const { isAdmin, getAssignedClassIds } = useAuth();
   const [stats, setStats] = useState<Stats>({
     totalGrades: 0,
     totalClasses: 0,
@@ -73,16 +75,29 @@ export default function DashboardPage() {
     try {
       setLoading(true);
 
+      // Get assigned class IDs for non-admin users
+      const assignedClassIds = isAdmin ? null : getAssignedClassIds();
+
       // Total grades
       const { count: gradesCount } = await supabase
         .from('grades')
         .select('*', { count: 'exact', head: true });
 
-      // Total classes for selected year
-      const { data: classesData, count: classesCount } = await supabase
+      // Total classes for selected year (filtered by assignment for teachers)
+      let classesQuery = supabase
         .from('classes')
         .select('*, grades(name)', { count: 'exact' })
         .eq('school_year', selectedYear);
+
+      // Filter by assigned classes if not admin
+      if (!isAdmin && assignedClassIds && assignedClassIds.length > 0) {
+        classesQuery = classesQuery.in('id', assignedClassIds);
+      } else if (!isAdmin && (!assignedClassIds || assignedClassIds.length === 0)) {
+        // Teacher with no assignments - show no classes
+        classesQuery = classesQuery.in('id', ['no-match']);
+      }
+
+      const { data: classesData, count: classesCount } = await classesQuery;
 
       // Total students for selected year
       const classIds = classesData?.map(c => c.id) || [];
@@ -91,12 +106,20 @@ export default function DashboardPage() {
         .select('*', { count: 'exact', head: true })
         .in('class_id', classIds.length > 0 ? classIds : ['']);
 
-      // Today's attendance
+      // Today's attendance (filtered by assigned classes for teachers)
       const today = format(new Date(), 'yyyy-MM-dd');
-      const { data: todayAttendance } = await supabase
+      let attendanceQuery = supabase
         .from('attendance')
         .select('status, class_id')
         .eq('date', today);
+
+      if (!isAdmin && classIds.length > 0) {
+        attendanceQuery = attendanceQuery.in('class_id', classIds);
+      } else if (!isAdmin && classIds.length === 0) {
+        attendanceQuery = attendanceQuery.in('class_id', ['no-match']);
+      }
+
+      const { data: todayAttendance } = await attendanceQuery;
 
       const presentToday = todayAttendance?.filter(a => a.status === 'present').length || 0;
       const totalToday = todayAttendance?.length || 0;
@@ -115,7 +138,7 @@ export default function DashboardPage() {
       await loadClassBreakdown(classesData || [], todayAttendance || []);
 
       // Load recent attendance (last 7 days)
-      await loadRecentAttendance();
+      await loadRecentAttendance(classIds);
     } catch (error) {
       console.error('Error loading stats:', error);
     } finally {
@@ -150,15 +173,24 @@ export default function DashboardPage() {
     setClassBreakdown(breakdown);
   }
 
-  async function loadRecentAttendance() {
+  async function loadRecentAttendance(classIds: string[]) {
     const recent: RecentAttendance[] = [];
 
     for (let i = 0; i < 7; i++) {
       const date = format(subDays(new Date(), i), 'yyyy-MM-dd');
-      const { data } = await supabase
+      let query = supabase
         .from('attendance')
         .select('status')
         .eq('date', date);
+
+      // Filter by class IDs for teachers
+      if (!isAdmin && classIds.length > 0) {
+        query = query.in('class_id', classIds);
+      } else if (!isAdmin && classIds.length === 0) {
+        query = query.in('class_id', ['no-match']);
+      }
+
+      const { data } = await query;
 
       const present = data?.filter(a => a.status === 'present').length || 0;
       const total = data?.length || 0;
