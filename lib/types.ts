@@ -2,6 +2,47 @@
 // TypeScript Interfaces cho Database
 // =============================================
 
+// Môn học
+export interface Subject {
+  id: string;
+  name: string;
+  code: string | null;
+  description: string | null;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+// Người dùng (Giáo viên / Admin)
+export type UserRole = 'admin' | 'teacher';
+
+export interface User {
+  id: string;
+  email: string;
+  password_hash: string;
+  full_name: string;
+  phone: string | null;
+  role: UserRole;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+// Phân công giảng dạy
+export interface TeacherAssignment {
+  id: string;
+  user_id: string;
+  class_id: string;
+  subject_id: string;
+  school_year: string;
+  is_homeroom: boolean;
+  created_at: string;
+  // Relations
+  users?: User;
+  classes?: Class;
+  subjects?: Subject;
+}
+
 // Khối lớp
 export interface Grade {
   id: string;
@@ -44,11 +85,13 @@ export interface Topic {
   name: string;
   description: string | null;
   grade_id: string;
+  subject_id: string | null;
   display_order: number;
   created_at: string;
   updated_at: string;
   // Relations
   grades?: Grade;
+  subjects?: Subject;
 }
 
 // Tiêu chí
@@ -105,6 +148,7 @@ export interface Evaluation {
   student_id: string;
   criterion_id: string;
   class_id: string;
+  user_id: string | null;
   rating: RatingLevel;
   note: string | null;
   evaluated_date: string;
@@ -114,6 +158,7 @@ export interface Evaluation {
   students?: Student;
   criteria?: Criterion;
   classes?: Class;
+  users?: User;
 }
 
 // Điểm danh
@@ -123,6 +168,7 @@ export interface Attendance {
   id: string;
   student_id: string;
   class_id: string;
+  user_id: string | null;
   date: string;
   status: AttendanceStatus;
   note: string | null;
@@ -131,6 +177,7 @@ export interface Attendance {
   // Relations
   students?: Student;
   classes?: Class;
+  users?: User;
 }
 
 // Tên máy tính (40 máy)

@@ -1,8 +1,9 @@
 'use client';
 
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
-import { useState } from 'react';
+import { usePathname, useRouter } from 'next/navigation';
+import { useState, useEffect } from 'react';
+import { useAuth } from '@/contexts/AuthContext';
 import {
   Home,
   Layers,
@@ -21,18 +22,18 @@ import {
   X,
   CalendarCheck,
   Backpack,
-  Package
+  Package,
+  LogOut,
+  User,
+  Settings,
+  UserCog,
+  BookMarked,
+  ClipboardPen
 } from 'lucide-react';
 
-const navItems = [
+// Menu cho tất cả người dùng
+const commonNavItems = [
   { href: '/', icon: Home, label: 'Tổng quan' },
-  { href: '/grades', icon: Layers, label: 'Khối lớp' },
-  { href: '/classes', icon: BookOpen, label: 'Lớp học' },
-  { href: '/year-transition', icon: RefreshCw, label: 'Chuyển năm học' },
-  { href: '/students', icon: Users, label: 'Học sinh' },
-  { href: '/topics', icon: FileText, label: 'Chủ đề' },
-  { href: '/criteria', icon: CheckSquare, label: 'Tiêu chí' },
-  { href: '/evaluation-levels', icon: Star, label: 'Mức đánh giá' },
   { href: '/attendance', icon: ClipboardList, label: 'Điểm danh' },
   { href: '/equipment-check', icon: Backpack, label: 'Kiểm tra đồ dùng' },
   { href: '/evaluations', icon: ClipboardCheck, label: 'Đánh giá' },
@@ -40,6 +41,20 @@ const navItems = [
   { href: '/student-summary', icon: UserCheck, label: 'Tổng hợp học sinh' },
   { href: '/attendance-summary', icon: CalendarCheck, label: 'Thống kê buổi học' },
   { href: '/equipment-summary', icon: Package, label: 'Thống kê đồ dùng' },
+];
+
+// Menu chỉ dành cho Admin
+const adminNavItems = [
+  { href: '/admin/users', icon: UserCog, label: 'Quản lý giáo viên' },
+  { href: '/admin/subjects', icon: BookMarked, label: 'Quản lý môn học' },
+  { href: '/admin/assignments', icon: ClipboardPen, label: 'Phân công giảng dạy' },
+  { href: '/grades', icon: Layers, label: 'Khối lớp' },
+  { href: '/classes', icon: BookOpen, label: 'Lớp học' },
+  { href: '/year-transition', icon: RefreshCw, label: 'Chuyển năm học' },
+  { href: '/students', icon: Users, label: 'Học sinh' },
+  { href: '/topics', icon: FileText, label: 'Chủ đề' },
+  { href: '/criteria', icon: CheckSquare, label: 'Tiêu chí' },
+  { href: '/evaluation-levels', icon: Star, label: 'Mức đánh giá' },
 ];
 
 // Mobile bottom navigation - only show 4 items
@@ -52,15 +67,49 @@ const mobileNavItems = [
 
 export default function Sidebar() {
   const pathname = usePathname();
+  const router = useRouter();
+  const { user, loading, logout, isAdmin } = useAuth();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+
+  // Redirect to login if not authenticated
+  useEffect(() => {
+    if (!loading && !user && pathname !== '/login') {
+      router.push('/login');
+    }
+  }, [user, loading, pathname, router]);
+
+  // Don't show sidebar on login page
+  if (pathname === '/login') {
+    return null;
+  }
+
+  // Show loading state
+  if (loading) {
+    return null;
+  }
+
+  // Don't render if not logged in
+  if (!user) {
+    return null;
+  }
+
+  // Combine nav items based on role
+  const navItems = isAdmin
+    ? [...commonNavItems, ...adminNavItems]
+    : commonNavItems;
+
+  function handleLogout() {
+    logout();
+    router.push('/login');
+  }
 
   return (
     <>
       {/* Mobile Header */}
       <div className="lg:hidden fixed top-0 left-0 right-0 z-40 bg-gradient-to-r from-blue-600 to-blue-700 text-white px-4 py-3 flex items-center justify-between shadow-lg">
         <div>
-          <h1 className="text-lg font-bold">Quản lý Lớp học</h1>
-          <p className="text-blue-100 text-xs">Điểm danh và Nhận xét</p>
+          <h1 className="text-lg font-bold">{user.full_name}</h1>
+          <p className="text-blue-100 text-xs">{isAdmin ? 'Quản trị viên' : 'Giáo viên'}</p>
         </div>
         <button
           onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
@@ -94,8 +143,18 @@ export default function Sidebar() {
           <p className="text-blue-100 text-sm mt-1">Điểm danh và Nhận xét</p>
         </div>
 
-        <div className="p-6 lg:hidden">
-          <h1 className="text-xl font-bold">Menu</h1>
+        <div className="p-6 lg:hidden flex items-center justify-between">
+          <div>
+            <h1 className="text-xl font-bold">Menu</h1>
+            <p className="text-blue-200 text-sm">{user.full_name}</p>
+          </div>
+          <button
+            onClick={handleLogout}
+            className="p-2 hover:bg-white/10 rounded-lg transition-colors"
+            title="Đăng xuất"
+          >
+            <LogOut size={20} />
+          </button>
         </div>
 
         <nav className="flex-1 px-3 overflow-y-auto">
@@ -125,15 +184,22 @@ export default function Sidebar() {
         </nav>
 
         <div className="p-4 border-t border-blue-500">
-          <a
-            href={process.env.NEXT_PUBLIC_SUPABASE_URL}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center gap-2 px-4 py-2 text-blue-100 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
+          <div className="flex items-center gap-3 px-4 py-2 mb-2">
+            <div className="w-8 h-8 bg-white/20 rounded-full flex items-center justify-center">
+              <User size={16} />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium truncate">{user.full_name}</p>
+              <p className="text-xs text-blue-200">{isAdmin ? 'Admin' : 'Giáo viên'}</p>
+            </div>
+          </div>
+          <button
+            onClick={handleLogout}
+            className="flex items-center gap-2 px-4 py-2 w-full text-blue-100 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
           >
-            <ExternalLink size={18} />
-            <span className="text-sm">Mở Supabase</span>
-          </a>
+            <LogOut size={18} />
+            <span className="text-sm">Đăng xuất</span>
+          </button>
         </div>
       </aside>
 
