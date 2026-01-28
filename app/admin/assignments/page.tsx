@@ -148,8 +148,16 @@ export default function AssignmentsPage() {
       if (error) throw error;
 
       setShowModal(false);
+
+      // Update filter to match the year we just added (useEffect will reload)
+      if (selectedYear !== formData.school_year) {
+        setSelectedYear(formData.school_year);
+      } else {
+        // Same year, reload manually
+        loadAssignments();
+      }
+
       resetForm();
-      loadAssignments();
       alert(`Đã thêm ${formData.class_ids.length} phân công thành công!`);
     } catch (error: any) {
       if (error.code === '23505') {
