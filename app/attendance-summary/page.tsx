@@ -5,6 +5,7 @@ import { supabase } from '@/lib/supabase';
 import { Class } from '@/lib/types';
 import { Check, X as XIcon, Download } from 'lucide-react';
 import { format } from 'date-fns';
+import { useAuth } from '@/contexts/AuthContext';
 
 interface Student {
   id: string;
@@ -25,6 +26,7 @@ interface StudentSummary {
 }
 
 export default function AttendanceSummaryPage() {
+  const { isAdmin, getAssignedClassIds } = useAuth();
   const [classes, setClasses] = useState<Class[]>([]);
   const [selectedClassId, setSelectedClassId] = useState<string>('');
   const [selectedYear, setSelectedYear] = useState<string>('2025-2026');
@@ -78,7 +80,9 @@ export default function AttendanceSummaryPage() {
 
   async function loadClasses() {
     try {
-      const { data, error } = await supabase
+      const assignedClassIds = isAdmin ? null : getAssignedClassIds();
+
+      let query = supabase
         .from('classes')
         .select(`
           *,
@@ -89,6 +93,15 @@ export default function AttendanceSummaryPage() {
         `)
         .eq('school_year', selectedYear)
         .order('name');
+
+      // Filter by assigned classes for non-admin
+      if (!isAdmin && assignedClassIds && assignedClassIds.length > 0) {
+        query = query.in('id', assignedClassIds);
+      } else if (!isAdmin && (!assignedClassIds || assignedClassIds.length === 0)) {
+        query = query.in('id', ['no-match']);
+      }
+
+      const { data, error } = await query;
 
       if (error) throw error;
       setClasses(data || []);

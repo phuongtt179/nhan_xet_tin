@@ -6,6 +6,7 @@ import { Class, Topic, Criterion } from '@/lib/types';
 import { Star, BarChart2, ChevronDown, ChevronUp, FileDown } from 'lucide-react';
 import { format } from 'date-fns';
 import { printTopicSummary } from '@/lib/printUtils';
+import { useAuth } from '@/contexts/AuthContext';
 
 interface StudentSummary {
   studentId: string;
@@ -16,6 +17,7 @@ interface StudentSummary {
 }
 
 export default function TopicSummaryPage() {
+  const { isAdmin, getAssignedClassIds } = useAuth();
   const [classes, setClasses] = useState<Class[]>([]);
   const [topics, setTopics] = useState<Topic[]>([]);
   const [criteria, setCriteria] = useState<Criterion[]>([]);
@@ -58,7 +60,9 @@ export default function TopicSummaryPage() {
 
   async function loadClasses() {
     try {
-      const { data, error } = await supabase
+      const assignedClassIds = isAdmin ? null : getAssignedClassIds();
+
+      let query = supabase
         .from('classes')
         .select(`
           *,
@@ -68,6 +72,15 @@ export default function TopicSummaryPage() {
           )
         `)
         .order('name');
+
+      // Filter by assigned classes for non-admin
+      if (!isAdmin && assignedClassIds && assignedClassIds.length > 0) {
+        query = query.in('id', assignedClassIds);
+      } else if (!isAdmin && (!assignedClassIds || assignedClassIds.length === 0)) {
+        query = query.in('id', ['no-match']);
+      }
+
+      const { data, error } = await query;
 
       if (error) throw error;
       setClasses(data || []);

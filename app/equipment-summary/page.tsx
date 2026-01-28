@@ -6,6 +6,7 @@ import { Class } from '@/lib/types';
 import { format, startOfMonth, endOfMonth } from 'date-fns';
 import { vi } from 'date-fns/locale';
 import { ChevronDown, ChevronUp } from 'lucide-react';
+import { useAuth } from '@/contexts/AuthContext';
 
 interface StudentEquipmentSummary {
   studentId: string;
@@ -20,6 +21,7 @@ const ROWS = ['A', 'B', 'C', 'D', 'E'];
 const COLS = [1, 2, 3, 4, 5, 6, 7, 8];
 
 export default function EquipmentSummaryPage() {
+  const { isAdmin, getAssignedClassIds } = useAuth();
   const [classes, setClasses] = useState<Class[]>([]);
   const [schoolYears, setSchoolYears] = useState<string[]>([]);
   const [selectedYear, setSelectedYear] = useState<string>('2025-2026');
@@ -67,7 +69,9 @@ export default function EquipmentSummaryPage() {
 
   async function loadClasses() {
     try {
-      const { data, error } = await supabase
+      const assignedClassIds = isAdmin ? null : getAssignedClassIds();
+
+      let query = supabase
         .from('classes')
         .select(`
           *,
@@ -78,6 +82,15 @@ export default function EquipmentSummaryPage() {
         `)
         .eq('school_year', selectedYear)
         .order('name');
+
+      // Filter by assigned classes for non-admin
+      if (!isAdmin && assignedClassIds && assignedClassIds.length > 0) {
+        query = query.in('id', assignedClassIds);
+      } else if (!isAdmin && (!assignedClassIds || assignedClassIds.length === 0)) {
+        query = query.in('id', ['no-match']);
+      }
+
+      const { data, error } = await query;
 
       if (error) throw error;
       setClasses(data || []);
