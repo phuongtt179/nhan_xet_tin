@@ -2,13 +2,17 @@
 
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
-import { Criterion, Topic, Grade } from '@/lib/types';
+import { Criterion, Topic, Grade, Subject } from '@/lib/types';
 import { CheckSquare, Plus, Edit2, Trash2, X } from 'lucide-react';
+import { useAuth } from '@/contexts/AuthContext';
 
 export default function CriteriaPage() {
+  const { user, isAdmin, getAssignedSubjects } = useAuth();
   const [criteria, setCriteria] = useState<Criterion[]>([]);
   const [topics, setTopics] = useState<Topic[]>([]);
   const [grades, setGrades] = useState<Grade[]>([]);
+  const [subjects, setSubjects] = useState<Subject[]>([]);
+  const [selectedSubjectId, setSelectedSubjectId] = useState<string>('');
   const [selectedGradeId, setSelectedGradeId] = useState<string>('');
   const [selectedTopicId, setSelectedTopicId] = useState<string>('');
   const [loading, setLoading] = useState(true);
@@ -21,18 +25,19 @@ export default function CriteriaPage() {
   });
 
   useEffect(() => {
+    loadSubjects();
     loadGrades();
-  }, []);
+  }, [user]);
 
   useEffect(() => {
-    if (selectedGradeId) {
+    if (selectedSubjectId && selectedGradeId) {
       loadTopics();
       setSelectedTopicId('');
     } else {
       setTopics([]);
       setSelectedTopicId('');
     }
-  }, [selectedGradeId]);
+  }, [selectedSubjectId, selectedGradeId]);
 
   useEffect(() => {
     if (selectedTopicId) {
@@ -42,6 +47,34 @@ export default function CriteriaPage() {
       setLoading(false);
     }
   }, [selectedTopicId]);
+
+  async function loadSubjects() {
+    try {
+      if (!user) return;
+
+      if (isAdmin) {
+        // Admin: load all subjects
+        const { data, error } = await supabase
+          .from('subjects')
+          .select('*')
+          .eq('is_active', true)
+          .order('name');
+
+        if (error) throw error;
+        setSubjects(data || []);
+      } else {
+        // Teacher: load only assigned subjects
+        const assignedSubjects = getAssignedSubjects();
+        setSubjects(assignedSubjects);
+        // Auto-select if only one subject
+        if (assignedSubjects.length === 1) {
+          setSelectedSubjectId(assignedSubjects[0].id);
+        }
+      }
+    } catch (error) {
+      console.error('Error loading subjects:', error);
+    }
+  }
 
   async function loadGrades() {
     try {
@@ -64,6 +97,7 @@ export default function CriteriaPage() {
         .from('topics')
         .select('*')
         .eq('grade_id', selectedGradeId)
+        .eq('subject_id', selectedSubjectId)
         .order('name');
 
       if (error) throw error;
@@ -84,7 +118,12 @@ export default function CriteriaPage() {
           topics (
             id,
             name,
+            subject_id,
             grades (
+              id,
+              name
+            ),
+            subjects (
               id,
               name
             )
@@ -209,27 +248,62 @@ export default function CriteriaPage() {
         </p>
       </div>
 
-      {/* Grade & Topic Selector */}
+      {/* Subject, Grade & Topic Selector */}
       <div className="bg-white rounded-lg lg:rounded-xl shadow-md p-4 lg:p-6 mb-6 space-y-4">
+        {/* Subject Selector */}
         <div>
           <label className="block text-sm font-semibold text-gray-700 mb-2">
-            Chọn Khối <span className="text-red-500">*</span>
+            Chọn Môn học <span className="text-red-500">*</span>
           </label>
           <select
-            value={selectedGradeId}
-            onChange={(e) => setSelectedGradeId(e.target.value)}
+            value={selectedSubjectId}
+            onChange={(e) => {
+              setSelectedSubjectId(e.target.value);
+              setSelectedGradeId('');
+              setSelectedTopicId('');
+            }}
             className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none"
           >
-            <option value="">-- Chọn khối --</option>
-            {grades.map((grade) => (
-              <option key={grade.id} value={grade.id}>
-                {grade.name}
+            <option value="">-- Chọn môn học --</option>
+            {subjects.map((subject) => (
+              <option key={subject.id} value={subject.id}>
+                {subject.name}
               </option>
             ))}
           </select>
+          {!isAdmin && subjects.length === 0 && (
+            <p className="text-sm text-orange-600 mt-1">
+              Bạn chưa được phân công môn học nào.
+            </p>
+          )}
         </div>
 
-        {selectedGradeId && (
+        {/* Grade Selector */}
+        {selectedSubjectId && (
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-2">
+              Chọn Khối <span className="text-red-500">*</span>
+            </label>
+            <select
+              value={selectedGradeId}
+              onChange={(e) => {
+                setSelectedGradeId(e.target.value);
+                setSelectedTopicId('');
+              }}
+              className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none"
+            >
+              <option value="">-- Chọn khối --</option>
+              {grades.map((grade) => (
+                <option key={grade.id} value={grade.id}>
+                  {grade.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+
+        {/* Topic Selector */}
+        {selectedSubjectId && selectedGradeId && (
           <div>
             <label className="block text-sm font-semibold text-gray-700 mb-2">
               Chọn Chủ đề <span className="text-red-500">*</span>
@@ -248,7 +322,7 @@ export default function CriteriaPage() {
             </select>
             {topics.length === 0 && (
               <p className="text-sm text-orange-600 mt-1">
-                Chưa có chủ đề nào cho {selectedGrade?.name}. Vui lòng tạo chủ đề trước.
+                Chưa có chủ đề nào cho {selectedGrade?.name}. Vui lòng tạo chủ đề trước trong mục Quản lý Chủ đề.
               </p>
             )}
           </div>
@@ -269,10 +343,15 @@ export default function CriteriaPage() {
       )}
 
       {/* Criteria List */}
-      {!selectedGradeId ? (
+      {!selectedSubjectId ? (
         <div className="bg-blue-50 border-2 border-blue-200 rounded-xl p-6 text-center">
           <CheckSquare className="mx-auto text-blue-400 mb-3" size={48} />
-          <p className="text-blue-800 font-semibold">Vui lòng chọn khối để bắt đầu</p>
+          <p className="text-blue-800 font-semibold">Vui lòng chọn môn học để bắt đầu</p>
+        </div>
+      ) : !selectedGradeId ? (
+        <div className="bg-blue-50 border-2 border-blue-200 rounded-xl p-6 text-center">
+          <CheckSquare className="mx-auto text-blue-400 mb-3" size={48} />
+          <p className="text-blue-800 font-semibold">Vui lòng chọn khối để tiếp tục</p>
         </div>
       ) : !selectedTopicId ? (
         <div className="bg-blue-50 border-2 border-blue-200 rounded-xl p-6 text-center">
@@ -310,6 +389,9 @@ export default function CriteriaPage() {
                     Chủ đề
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                    Môn học
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
                     Khối
                   </th>
                   <th className="px-6 py-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">
@@ -331,6 +413,11 @@ export default function CriteriaPage() {
                     <td className="px-6 py-4">
                       <span className="px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-xs font-semibold">
                         {(criterion as any).topics?.name}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4">
+                      <span className="px-3 py-1 bg-green-100 text-green-800 rounded-full text-xs font-semibold">
+                        {(criterion as any).topics?.subjects?.name}
                       </span>
                     </td>
                     <td className="px-6 py-4">
@@ -372,6 +459,9 @@ export default function CriteriaPage() {
                     <div className="flex flex-wrap gap-1 mb-2">
                       <span className="inline-block px-2 py-1 bg-blue-100 text-blue-800 rounded-full text-xs font-semibold">
                         {(criterion as any).topics?.name}
+                      </span>
+                      <span className="inline-block px-2 py-1 bg-green-100 text-green-800 rounded-full text-xs font-semibold">
+                        {(criterion as any).topics?.subjects?.name}
                       </span>
                       <span className="inline-block px-2 py-1 bg-purple-100 text-purple-800 rounded-full text-xs font-semibold">
                         {(criterion as any).topics?.grades?.name}

@@ -2,12 +2,16 @@
 
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
-import { Topic, Grade } from '@/lib/types';
+import { Topic, Grade, Subject } from '@/lib/types';
 import { FileText, Plus, Edit2, Trash2, X } from 'lucide-react';
+import { useAuth } from '@/contexts/AuthContext';
 
 export default function TopicsPage() {
+  const { user, isAdmin, getAssignedSubjects } = useAuth();
   const [topics, setTopics] = useState<Topic[]>([]);
   const [grades, setGrades] = useState<Grade[]>([]);
+  const [subjects, setSubjects] = useState<Subject[]>([]);
+  const [selectedSubjectId, setSelectedSubjectId] = useState<string>('');
   const [selectedGradeId, setSelectedGradeId] = useState<string>('');
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
@@ -16,20 +20,50 @@ export default function TopicsPage() {
     name: '',
     description: '',
     grade_id: '',
+    subject_id: '',
   });
 
   useEffect(() => {
+    loadSubjects();
     loadGrades();
-  }, []);
+  }, [user]);
 
   useEffect(() => {
-    if (selectedGradeId) {
+    if (selectedSubjectId && selectedGradeId) {
       loadTopics();
     } else {
       setTopics([]);
       setLoading(false);
     }
-  }, [selectedGradeId]);
+  }, [selectedSubjectId, selectedGradeId]);
+
+  async function loadSubjects() {
+    try {
+      if (!user) return;
+
+      if (isAdmin) {
+        // Admin: load all subjects
+        const { data, error } = await supabase
+          .from('subjects')
+          .select('*')
+          .eq('is_active', true)
+          .order('name');
+
+        if (error) throw error;
+        setSubjects(data || []);
+      } else {
+        // Teacher: load only assigned subjects
+        const assignedSubjects = getAssignedSubjects();
+        setSubjects(assignedSubjects);
+        // Auto-select if only one subject
+        if (assignedSubjects.length === 1) {
+          setSelectedSubjectId(assignedSubjects[0].id);
+        }
+      }
+    } catch (error) {
+      console.error('Error loading subjects:', error);
+    }
+  }
 
   async function loadGrades() {
     try {
@@ -49,17 +83,24 @@ export default function TopicsPage() {
   async function loadTopics() {
     try {
       setLoading(true);
-      const { data, error } = await supabase
+      let query = supabase
         .from('topics')
         .select(`
           *,
           grades (
             id,
             name
+          ),
+          subjects (
+            id,
+            name
           )
         `)
         .eq('grade_id', selectedGradeId)
+        .eq('subject_id', selectedSubjectId)
         .order('created_at', { ascending: false });
+
+      const { data, error } = await query;
 
       if (error) throw error;
       setTopics(data || []);
@@ -77,6 +118,7 @@ export default function TopicsPage() {
       name: '',
       description: '',
       grade_id: selectedGradeId,
+      subject_id: selectedSubjectId,
     });
     setShowModal(true);
   }
@@ -87,6 +129,7 @@ export default function TopicsPage() {
       name: topic.name,
       description: topic.description || '',
       grade_id: topic.grade_id,
+      subject_id: topic.subject_id || selectedSubjectId,
     });
     setShowModal(true);
   }
@@ -98,6 +141,7 @@ export default function TopicsPage() {
       name: '',
       description: '',
       grade_id: selectedGradeId,
+      subject_id: selectedSubjectId,
     });
   }
 
@@ -113,6 +157,7 @@ export default function TopicsPage() {
             name: formData.name,
             description: formData.description || null,
             grade_id: formData.grade_id,
+            subject_id: formData.subject_id,
             updated_at: new Date().toISOString(),
           })
           .eq('id', editingTopic.id);
@@ -127,6 +172,7 @@ export default function TopicsPage() {
             name: formData.name,
             description: formData.description || null,
             grade_id: formData.grade_id,
+            subject_id: formData.subject_id,
           }]);
 
         if (error) throw error;
@@ -176,27 +222,56 @@ export default function TopicsPage() {
         </p>
       </div>
 
-      {/* Grade Selector */}
-      <div className="bg-white rounded-lg lg:rounded-xl shadow-md p-4 lg:p-6 mb-6">
-        <label className="block text-sm font-semibold text-gray-700 mb-2">
-          Chọn Khối <span className="text-red-500">*</span>
-        </label>
-        <select
-          value={selectedGradeId}
-          onChange={(e) => setSelectedGradeId(e.target.value)}
-          className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none"
-        >
-          <option value="">-- Chọn khối để xem chủ đề --</option>
-          {grades.map((grade) => (
-            <option key={grade.id} value={grade.id}>
-              {grade.name}
-            </option>
-          ))}
-        </select>
+      {/* Subject & Grade Selector */}
+      <div className="bg-white rounded-lg lg:rounded-xl shadow-md p-4 lg:p-6 mb-6 space-y-4">
+        {/* Subject Selector */}
+        <div>
+          <label className="block text-sm font-semibold text-gray-700 mb-2">
+            Chọn Môn học <span className="text-red-500">*</span>
+          </label>
+          <select
+            value={selectedSubjectId}
+            onChange={(e) => setSelectedSubjectId(e.target.value)}
+            className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none"
+          >
+            <option value="">-- Chọn môn học --</option>
+            {subjects.map((subject) => (
+              <option key={subject.id} value={subject.id}>
+                {subject.name}
+              </option>
+            ))}
+          </select>
+          {!isAdmin && subjects.length === 0 && (
+            <p className="text-sm text-orange-600 mt-1">
+              Bạn chưa được phân công môn học nào.
+            </p>
+          )}
+        </div>
+
+        {/* Grade Selector */}
+        {selectedSubjectId && (
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-2">
+              Chọn Khối <span className="text-red-500">*</span>
+            </label>
+            <select
+              value={selectedGradeId}
+              onChange={(e) => setSelectedGradeId(e.target.value)}
+              className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none"
+            >
+              <option value="">-- Chọn khối để xem chủ đề --</option>
+              {grades.map((grade) => (
+                <option key={grade.id} value={grade.id}>
+                  {grade.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
       </div>
 
       {/* Add Button */}
-      {selectedGradeId && (
+      {selectedSubjectId && selectedGradeId && (
         <div className="mb-6">
           <button
             onClick={openAddModal}
@@ -209,7 +284,12 @@ export default function TopicsPage() {
       )}
 
       {/* Topics List */}
-      {!selectedGradeId ? (
+      {!selectedSubjectId ? (
+        <div className="bg-blue-50 border-2 border-blue-200 rounded-xl p-6 text-center">
+          <FileText className="mx-auto text-blue-400 mb-3" size={48} />
+          <p className="text-blue-800 font-semibold">Vui lòng chọn môn học để bắt đầu</p>
+        </div>
+      ) : !selectedGradeId ? (
         <div className="bg-blue-50 border-2 border-blue-200 rounded-xl p-6 text-center">
           <FileText className="mx-auto text-blue-400 mb-3" size={48} />
           <p className="text-blue-800 font-semibold">Vui lòng chọn khối để xem danh sách chủ đề</p>
@@ -242,6 +322,9 @@ export default function TopicsPage() {
                     Mô tả
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                    Môn học
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
                     Khối
                   </th>
                   <th className="px-6 py-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">
@@ -259,6 +342,11 @@ export default function TopicsPage() {
                       <div className="text-sm text-gray-600">
                         {topic.description || <span className="text-gray-400 italic">Không có mô tả</span>}
                       </div>
+                    </td>
+                    <td className="px-6 py-4">
+                      <span className="px-3 py-1 bg-green-100 text-green-800 rounded-full text-xs font-semibold">
+                        {(topic as any).subjects?.name}
+                      </span>
                     </td>
                     <td className="px-6 py-4">
                       <span className="px-3 py-1 bg-purple-100 text-purple-800 rounded-full text-xs font-semibold">
@@ -296,9 +384,14 @@ export default function TopicsPage() {
                 <div className="flex justify-between items-start mb-3">
                   <div className="flex-1">
                     <h3 className="font-bold text-gray-900 text-base mb-1">{topic.name}</h3>
-                    <span className="inline-block px-2 py-1 bg-purple-100 text-purple-800 rounded-full text-xs font-semibold">
-                      {(topic as any).grades?.name}
-                    </span>
+                    <div className="flex flex-wrap gap-1">
+                      <span className="inline-block px-2 py-1 bg-green-100 text-green-800 rounded-full text-xs font-semibold">
+                        {(topic as any).subjects?.name}
+                      </span>
+                      <span className="inline-block px-2 py-1 bg-purple-100 text-purple-800 rounded-full text-xs font-semibold">
+                        {(topic as any).grades?.name}
+                      </span>
+                    </div>
                   </div>
                   <div className="flex gap-2">
                     <button
@@ -341,6 +434,17 @@ export default function TopicsPage() {
             </div>
 
             <form onSubmit={handleSubmit} className="space-y-4">
+              {/* Subject - Read only display */}
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  Môn học <span className="text-red-500">*</span>
+                </label>
+                <div className="w-full px-4 py-2 border-2 border-gray-200 rounded-lg bg-gray-50 text-gray-700">
+                  {subjects.find(s => s.id === formData.subject_id)?.name || 'Chưa chọn môn học'}
+                </div>
+                <p className="text-xs text-gray-500 mt-1">Môn học được xác định từ lựa chọn ở trên</p>
+              </div>
+
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-2">
                   Khối <span className="text-red-500">*</span>
