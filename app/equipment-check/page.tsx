@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
-import { Class } from '@/lib/types';
+import { Class, Subject } from '@/lib/types';
 import { useAuth } from '@/contexts/AuthContext';
 import { Save, ChevronDown, ChevronUp, Backpack } from 'lucide-react';
 import { format } from 'date-fns';
@@ -20,7 +20,7 @@ const ROWS = ['A', 'B', 'C', 'D', 'E'];
 const COLS = [1, 2, 3, 4, 5, 6, 7, 8];
 
 export default function EquipmentCheckPage() {
-  const { user, isAdmin } = useAuth();
+  const { user, isAdmin, getAssignedClassIds, getAssignedSubjects } = useAuth();
   const [classes, setClasses] = useState<Class[]>([]);
   const [schoolYears, setSchoolYears] = useState<string[]>([]);
   const [selectedYear, setSelectedYear] = useState<string>('2025-2026');
@@ -30,38 +30,51 @@ export default function EquipmentCheckPage() {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [isControlsCollapsed, setIsControlsCollapsed] = useState(false);
-  const [assignedClassIds, setAssignedClassIds] = useState<string[]>([]);
+
+  // Subject selection for teachers with multiple subjects
+  const [selectedSubjectId, setSelectedSubjectId] = useState<string>('');
+  const [assignedSubjects, setAssignedSubjects] = useState<Subject[]>([]);
 
   useEffect(() => {
     loadSchoolYears();
-  }, []);
-
-  useEffect(() => {
-    loadClasses();
-    setSelectedClassId('');
-  }, [selectedYear, assignedClassIds]);
-
-  // Load assigned classes for current teacher
-  useEffect(() => {
-    if (user && !isAdmin) {
-      loadAssignedClasses();
+    if (!isAdmin) {
+      // Load subjects assigned to this teacher
+      const subjects = getAssignedSubjects();
+      setAssignedSubjects(subjects);
+      // Auto-select if only one subject
+      if (subjects.length === 1) {
+        setSelectedSubjectId(subjects[0].id);
+      }
+    } else {
+      // Admin: load all subjects
+      loadAllSubjects();
     }
-  }, [user, isAdmin, selectedYear]);
+  }, [isAdmin]);
 
-  async function loadAssignedClasses() {
-    if (!user) return;
+  useEffect(() => {
+    // Load classes when subject is selected (for teachers) or always for admin
+    if (isAdmin || selectedSubjectId || assignedSubjects.length <= 1) {
+      loadClasses();
+    }
+    setSelectedClassId('');
+  }, [selectedYear, selectedSubjectId, isAdmin]);
+
+  async function loadAllSubjects() {
     try {
       const { data, error } = await supabase
-        .from('teacher_assignments')
-        .select('class_id')
-        .eq('user_id', user.id)
-        .eq('school_year', selectedYear);
+        .from('subjects')
+        .select('*')
+        .eq('is_active', true)
+        .order('name');
 
       if (error) throw error;
-      const classIds = [...new Set(data?.map(a => a.class_id) || [])];
-      setAssignedClassIds(classIds);
+      setAssignedSubjects(data || []);
+      // Auto-select first subject for admin if available
+      if (data && data.length > 0) {
+        setSelectedSubjectId(data[0].id);
+      }
     } catch (error) {
-      console.error('Error loading assigned classes:', error);
+      console.error('Error loading subjects:', error);
     }
   }
 
@@ -93,6 +106,9 @@ export default function EquipmentCheckPage() {
 
   async function loadClasses() {
     try {
+      // Get assigned class IDs filtered by selected subject
+      const assignedClassIds = isAdmin ? null : getAssignedClassIds(selectedSubjectId);
+
       let query = supabase
         .from('classes')
         .select(`
@@ -106,9 +122,9 @@ export default function EquipmentCheckPage() {
         .order('name');
 
       // Filter by assigned classes if not admin
-      if (!isAdmin && assignedClassIds.length > 0) {
+      if (!isAdmin && assignedClassIds && assignedClassIds.length > 0) {
         query = query.in('id', assignedClassIds);
-      } else if (!isAdmin && assignedClassIds.length === 0) {
+      } else if (!isAdmin && (!assignedClassIds || assignedClassIds.length === 0)) {
         setClasses([]);
         return;
       }
@@ -284,6 +300,30 @@ export default function EquipmentCheckPage() {
 
         {!isControlsCollapsed && (
           <div className="p-4 lg:p-6 space-y-4">
+            {/* Subject selector - show when multiple subjects available */}
+            {assignedSubjects.length > 1 && (
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  Môn học <span className="text-red-500">*</span>
+                </label>
+                <select
+                  value={selectedSubjectId}
+                  onChange={(e) => {
+                    setSelectedSubjectId(e.target.value);
+                    setSelectedClassId('');
+                  }}
+                  className="w-full px-3 lg:px-4 py-2 border-2 border-blue-300 rounded-lg focus:border-blue-500 focus:outline-none text-sm lg:text-base bg-blue-50"
+                >
+                  <option value="">-- Chọn môn học --</option>
+                  {assignedSubjects.map((subject) => (
+                    <option key={subject.id} value={subject.id}>
+                      {subject.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-2">
@@ -308,7 +348,8 @@ export default function EquipmentCheckPage() {
                 <select
                   value={selectedClassId}
                   onChange={(e) => setSelectedClassId(e.target.value)}
-                  className="w-full px-3 lg:px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none text-sm lg:text-base"
+                  disabled={!isAdmin && assignedSubjects.length > 1 && !selectedSubjectId}
+                  className="w-full px-3 lg:px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none text-sm lg:text-base disabled:bg-gray-100"
                 >
                   {classes.length === 0 ? (
                     <option value="">Chưa có lớp học</option>
@@ -370,6 +411,10 @@ export default function EquipmentCheckPage() {
       {loading ? (
         <div className="flex justify-center items-center py-12">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+        </div>
+      ) : !isAdmin && assignedSubjects.length > 1 && !selectedSubjectId ? (
+        <div className="text-center py-12 bg-white rounded-lg shadow">
+          <p className="text-gray-500 text-sm lg:text-lg">Vui lòng chọn môn học để bắt đầu</p>
         </div>
       ) : !selectedClassId ? (
         <div className="text-center py-12 bg-white rounded-lg shadow">
