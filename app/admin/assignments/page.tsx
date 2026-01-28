@@ -98,14 +98,10 @@ export default function AssignmentsPage() {
 
   async function loadAssignments() {
     try {
+      // First, get all assignments
       let query = supabase
         .from('teacher_assignments')
-        .select(`
-          *,
-          users (*),
-          classes (*, grades(name)),
-          subjects (*)
-        `)
+        .select('*')
         .eq('school_year', selectedYear)
         .order('created_at', { ascending: false });
 
@@ -113,9 +109,38 @@ export default function AssignmentsPage() {
         query = query.eq('user_id', selectedUserId);
       }
 
-      const { data, error } = await query;
-      if (error) throw error;
-      setAssignments(data || []);
+      const { data: assignmentsData, error: assignmentsError } = await query;
+      if (assignmentsError) throw assignmentsError;
+
+      if (!assignmentsData || assignmentsData.length === 0) {
+        setAssignments([]);
+        return;
+      }
+
+      // Then load related data
+      const userIds = [...new Set(assignmentsData.map(a => a.user_id))];
+      const classIds = [...new Set(assignmentsData.map(a => a.class_id))];
+      const subjectIds = [...new Set(assignmentsData.map(a => a.subject_id))];
+
+      const [usersRes, classesRes, subjectsRes] = await Promise.all([
+        supabase.from('users').select('*').in('id', userIds),
+        supabase.from('classes').select('*, grades(name)').in('id', classIds),
+        supabase.from('subjects').select('*').in('id', subjectIds),
+      ]);
+
+      // Map data
+      const usersMap = new Map((usersRes.data || []).map(u => [u.id, u]));
+      const classesMap = new Map((classesRes.data || []).map(c => [c.id, c]));
+      const subjectsMap = new Map((subjectsRes.data || []).map(s => [s.id, s]));
+
+      const enrichedData = assignmentsData.map(a => ({
+        ...a,
+        users: usersMap.get(a.user_id),
+        classes: classesMap.get(a.class_id),
+        subjects: subjectsMap.get(a.subject_id),
+      }));
+
+      setAssignments(enrichedData);
     } catch (error) {
       console.error('Error loading assignments:', error);
     }
