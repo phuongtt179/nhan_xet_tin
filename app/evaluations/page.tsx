@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { Class, Topic, Criterion, Student } from '@/lib/types';
+import { useAuth } from '@/contexts/AuthContext';
 import { Save, ChevronDown, ChevronUp } from 'lucide-react';
 import { format } from 'date-fns';
 
@@ -24,6 +25,7 @@ interface SeatPosition {
 }
 
 export default function EvaluationsPage() {
+  const { user, isAdmin } = useAuth();
   const [classes, setClasses] = useState<Class[]>([]);
   const [topics, setTopics] = useState<Topic[]>([]);
   const [criteria, setCriteria] = useState<Criterion[]>([]);
@@ -37,10 +39,43 @@ export default function EvaluationsPage() {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [isControlsCollapsed, setIsControlsCollapsed] = useState(false);
+  const [assignedClassIds, setAssignedClassIds] = useState<string[]>([]);
 
   useEffect(() => {
-    loadClasses();
-  }, []);
+    if (user && !isAdmin) {
+      loadAssignedClasses();
+    } else {
+      loadClasses();
+    }
+  }, [user, isAdmin]);
+
+  useEffect(() => {
+    if (assignedClassIds.length > 0 || isAdmin) {
+      loadClasses();
+    }
+  }, [assignedClassIds]);
+
+  async function loadAssignedClasses() {
+    if (!user) return;
+    try {
+      const { data, error } = await supabase
+        .from('teacher_assignments')
+        .select('class_id');
+
+      if (error) throw error;
+
+      // Filter by user's assignments
+      const { data: userAssignments } = await supabase
+        .from('teacher_assignments')
+        .select('class_id')
+        .eq('user_id', user.id);
+
+      const classIds = [...new Set(userAssignments?.map(a => a.class_id) || [])];
+      setAssignedClassIds(classIds);
+    } catch (error) {
+      console.error('Error loading assigned classes:', error);
+    }
+  }
 
   useEffect(() => {
     if (selectedClassId) {
@@ -71,7 +106,7 @@ export default function EvaluationsPage() {
 
   async function loadClasses() {
     try {
-      const { data, error } = await supabase
+      let query = supabase
         .from('classes')
         .select(`
           *,
@@ -81,6 +116,16 @@ export default function EvaluationsPage() {
           )
         `)
         .order('name');
+
+      // Filter by assigned classes if not admin
+      if (!isAdmin && assignedClassIds.length > 0) {
+        query = query.in('id', assignedClassIds);
+      } else if (!isAdmin && assignedClassIds.length === 0) {
+        setClasses([]);
+        return;
+      }
+
+      const { data, error } = await query;
 
       if (error) throw error;
       setClasses(data || []);
@@ -254,6 +299,7 @@ export default function EvaluationsPage() {
             .update({
               rating: student.rating,
               updated_at: new Date().toISOString(),
+              user_id: user?.id || null,
             })
             .eq('id', existing.id);
 
@@ -270,6 +316,7 @@ export default function EvaluationsPage() {
               class_id: selectedClassId,
               evaluated_date: selectedDate,
               rating: student.rating,
+              user_id: user?.id || null,
             }]);
 
           if (insertError) {

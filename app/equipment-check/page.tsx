@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { Class } from '@/lib/types';
+import { useAuth } from '@/contexts/AuthContext';
 import { Save, ChevronDown, ChevronUp, Backpack } from 'lucide-react';
 import { format } from 'date-fns';
 
@@ -19,6 +20,7 @@ const ROWS = ['A', 'B', 'C', 'D', 'E'];
 const COLS = [1, 2, 3, 4, 5, 6, 7, 8];
 
 export default function EquipmentCheckPage() {
+  const { user, isAdmin } = useAuth();
   const [classes, setClasses] = useState<Class[]>([]);
   const [schoolYears, setSchoolYears] = useState<string[]>([]);
   const [selectedYear, setSelectedYear] = useState<string>('2025-2026');
@@ -28,6 +30,7 @@ export default function EquipmentCheckPage() {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [isControlsCollapsed, setIsControlsCollapsed] = useState(false);
+  const [assignedClassIds, setAssignedClassIds] = useState<string[]>([]);
 
   useEffect(() => {
     loadSchoolYears();
@@ -36,7 +39,31 @@ export default function EquipmentCheckPage() {
   useEffect(() => {
     loadClasses();
     setSelectedClassId('');
-  }, [selectedYear]);
+  }, [selectedYear, assignedClassIds]);
+
+  // Load assigned classes for current teacher
+  useEffect(() => {
+    if (user && !isAdmin) {
+      loadAssignedClasses();
+    }
+  }, [user, isAdmin, selectedYear]);
+
+  async function loadAssignedClasses() {
+    if (!user) return;
+    try {
+      const { data, error } = await supabase
+        .from('teacher_assignments')
+        .select('class_id')
+        .eq('user_id', user.id)
+        .eq('school_year', selectedYear);
+
+      if (error) throw error;
+      const classIds = [...new Set(data?.map(a => a.class_id) || [])];
+      setAssignedClassIds(classIds);
+    } catch (error) {
+      console.error('Error loading assigned classes:', error);
+    }
+  }
 
   useEffect(() => {
     if (selectedClassId && selectedDate) {
@@ -66,7 +93,7 @@ export default function EquipmentCheckPage() {
 
   async function loadClasses() {
     try {
-      const { data, error } = await supabase
+      let query = supabase
         .from('classes')
         .select(`
           *,
@@ -77,6 +104,16 @@ export default function EquipmentCheckPage() {
         `)
         .eq('school_year', selectedYear)
         .order('name');
+
+      // Filter by assigned classes if not admin
+      if (!isAdmin && assignedClassIds.length > 0) {
+        query = query.in('id', assignedClassIds);
+      } else if (!isAdmin && assignedClassIds.length === 0) {
+        setClasses([]);
+        return;
+      }
+
+      const { data, error } = await query;
 
       if (error) throw error;
       setClasses(data || []);
@@ -159,6 +196,7 @@ export default function EquipmentCheckPage() {
             .update({
               forgot_equipment: record.forgotEquipment,
               note: record.note,
+              user_id: user?.id || null,
             })
             .eq('id', existing.id);
         } else {
@@ -171,6 +209,7 @@ export default function EquipmentCheckPage() {
               date: selectedDate,
               forgot_equipment: record.forgotEquipment,
               note: record.note,
+              user_id: user?.id || null,
             }]);
         }
       }
