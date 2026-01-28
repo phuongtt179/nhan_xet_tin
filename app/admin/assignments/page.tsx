@@ -5,7 +5,7 @@ import { supabase } from '@/lib/supabase';
 import { User, Subject, Class, TeacherAssignment } from '@/lib/types';
 import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'next/navigation';
-import { Plus, Trash2, ClipboardPen, Filter } from 'lucide-react';
+import { Plus, Trash2, ClipboardPen, Filter, Check } from 'lucide-react';
 
 export default function AssignmentsPage() {
   const { isAdmin } = useAuth();
@@ -17,13 +17,14 @@ export default function AssignmentsPage() {
   const [schoolYears, setSchoolYears] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
 
   const [selectedYear, setSelectedYear] = useState<string>('');
   const [selectedUserId, setSelectedUserId] = useState<string>('');
 
   const [formData, setFormData] = useState({
     user_id: '',
-    class_id: '',
+    class_ids: [] as string[],
     subject_id: '',
     school_year: '',
     is_homeroom: false,
@@ -45,11 +46,10 @@ export default function AssignmentsPage() {
 
   async function loadData() {
     try {
-      // Load users
+      // Load users (include admin too)
       const { data: usersData } = await supabase
         .from('users')
         .select('*')
-        .eq('role', 'teacher')
         .eq('is_active', true)
         .order('full_name');
       setUsers(usersData || []);
@@ -124,28 +124,41 @@ export default function AssignmentsPage() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
 
+    if (formData.class_ids.length === 0) {
+      alert('Vui lòng chọn ít nhất 1 lớp');
+      return;
+    }
+
+    setSubmitting(true);
+
     try {
+      // Create assignments for all selected classes
+      const insertData = formData.class_ids.map(class_id => ({
+        user_id: formData.user_id,
+        class_id,
+        subject_id: formData.subject_id,
+        school_year: formData.school_year,
+        is_homeroom: formData.is_homeroom,
+      }));
+
       const { error } = await supabase
         .from('teacher_assignments')
-        .insert({
-          user_id: formData.user_id,
-          class_id: formData.class_id,
-          subject_id: formData.subject_id,
-          school_year: formData.school_year,
-          is_homeroom: formData.is_homeroom,
-        });
+        .insert(insertData);
 
       if (error) throw error;
 
       setShowModal(false);
       resetForm();
       loadAssignments();
+      alert(`Đã thêm ${formData.class_ids.length} phân công thành công!`);
     } catch (error: any) {
       if (error.code === '23505') {
-        alert('Phân công này đã tồn tại!');
+        alert('Một số phân công đã tồn tại!');
       } else {
         alert(error.message || 'Có lỗi xảy ra');
       }
+    } finally {
+      setSubmitting(false);
     }
   }
 
@@ -168,11 +181,34 @@ export default function AssignmentsPage() {
   function resetForm() {
     setFormData({
       user_id: '',
-      class_id: '',
+      class_ids: [],
       subject_id: '',
       school_year: selectedYear,
       is_homeroom: false,
     });
+  }
+
+  function toggleClass(classId: string) {
+    setFormData(prev => ({
+      ...prev,
+      class_ids: prev.class_ids.includes(classId)
+        ? prev.class_ids.filter(id => id !== classId)
+        : [...prev.class_ids, classId]
+    }));
+  }
+
+  function selectAllClasses() {
+    setFormData(prev => ({
+      ...prev,
+      class_ids: classes.map(c => c.id)
+    }));
+  }
+
+  function deselectAllClasses() {
+    setFormData(prev => ({
+      ...prev,
+      class_ids: []
+    }));
   }
 
   if (loading) {
@@ -296,12 +332,13 @@ export default function AssignmentsPage() {
       {/* Modal */}
       {showModal && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-md">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-hidden flex flex-col">
             <div className="p-6 border-b">
               <h2 className="text-xl font-bold text-gray-800">Thêm phân công mới</h2>
+              <p className="text-sm text-gray-500 mt-1">Có thể chọn nhiều lớp cùng lúc</p>
             </div>
 
-            <form onSubmit={handleSubmit} className="p-6 space-y-4">
+            <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-6 space-y-4">
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-2">
                   Giáo viên *
@@ -314,25 +351,8 @@ export default function AssignmentsPage() {
                 >
                   <option value="">-- Chọn giáo viên --</option>
                   {users.map((user) => (
-                    <option key={user.id} value={user.id}>{user.full_name}</option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  Lớp *
-                </label>
-                <select
-                  value={formData.class_id}
-                  onChange={(e) => setFormData({ ...formData, class_id: e.target.value })}
-                  className="w-full px-3 py-2 border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none"
-                  required
-                >
-                  <option value="">-- Chọn lớp --</option>
-                  {classes.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {(c as any).grades?.name} - {c.name}
+                    <option key={user.id} value={user.id}>
+                      {user.full_name} {user.role === 'admin' ? '(Admin)' : ''}
                     </option>
                   ))}
                 </select>
@@ -361,7 +381,10 @@ export default function AssignmentsPage() {
                 </label>
                 <select
                   value={formData.school_year}
-                  onChange={(e) => setFormData({ ...formData, school_year: e.target.value })}
+                  onChange={(e) => {
+                    setFormData({ ...formData, school_year: e.target.value, class_ids: [] });
+                    loadClassesForYear(e.target.value);
+                  }}
                   className="w-full px-3 py-2 border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none"
                   required
                 >
@@ -369,6 +392,61 @@ export default function AssignmentsPage() {
                     <option key={year} value={year}>{year}</option>
                   ))}
                 </select>
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="text-sm font-semibold text-gray-700">
+                    Chọn lớp * ({formData.class_ids.length} đã chọn)
+                  </label>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={selectAllClasses}
+                      className="text-xs text-blue-600 hover:underline"
+                    >
+                      Chọn tất cả
+                    </button>
+                    <button
+                      type="button"
+                      onClick={deselectAllClasses}
+                      className="text-xs text-gray-600 hover:underline"
+                    >
+                      Bỏ chọn
+                    </button>
+                  </div>
+                </div>
+                <div className="border-2 border-gray-300 rounded-lg p-3 max-h-48 overflow-y-auto">
+                  <div className="grid grid-cols-2 gap-2">
+                    {classes.map((c) => {
+                      const isSelected = formData.class_ids.includes(c.id);
+                      return (
+                        <label
+                          key={c.id}
+                          className={`
+                            flex items-center gap-2 p-2 rounded-lg cursor-pointer transition-colors
+                            ${isSelected ? 'bg-blue-50 border border-blue-300' : 'hover:bg-gray-50 border border-transparent'}
+                          `}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={() => toggleClass(c.id)}
+                            className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                          />
+                          <span className={`text-sm ${isSelected ? 'font-medium text-blue-700' : 'text-gray-700'}`}>
+                            {(c as any).grades?.name} - {c.name}
+                          </span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                  {classes.length === 0 && (
+                    <p className="text-center text-gray-500 text-sm py-4">
+                      Không có lớp nào trong năm học này
+                    </p>
+                  )}
+                </div>
               </div>
 
               <div className="flex items-center gap-2">
@@ -380,7 +458,7 @@ export default function AssignmentsPage() {
                   className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
                 />
                 <label htmlFor="is_homeroom" className="text-sm font-medium text-gray-700">
-                  Là giáo viên chủ nhiệm lớp này
+                  Là giáo viên chủ nhiệm các lớp này
                 </label>
               </div>
 
@@ -394,9 +472,10 @@ export default function AssignmentsPage() {
                 </button>
                 <button
                   type="submit"
-                  className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg"
+                  disabled={submitting}
+                  className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg disabled:opacity-50"
                 >
-                  Thêm mới
+                  {submitting ? 'Đang thêm...' : `Thêm ${formData.class_ids.length} phân công`}
                 </button>
               </div>
             </form>
