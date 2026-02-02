@@ -168,8 +168,10 @@ export interface Attendance {
   id: string;
   student_id: string;
   class_id: string;
+  subject_id: string | null;
   user_id: string | null;
   date: string;
+  period: number; // Tiết học (1-7)
   status: AttendanceStatus;
   note: string | null;
   created_at: string;
@@ -177,7 +179,48 @@ export interface Attendance {
   // Relations
   students?: Student;
   classes?: Class;
+  subjects?: Subject;
   users?: User;
+}
+
+// Kiểm tra đồ dùng
+export interface EquipmentCheck {
+  id: string;
+  student_id: string;
+  class_id: string;
+  subject_id: string | null;
+  user_id: string | null;
+  date: string;
+  period: number; // Tiết học (1-7)
+  forgot_equipment: boolean;
+  note: string | null;
+  created_at: string;
+  updated_at: string;
+  // Relations
+  students?: Student;
+  classes?: Class;
+  subjects?: Subject;
+  users?: User;
+}
+
+// Nhật ký tiết dạy
+export interface TeachingDiary {
+  id: string;
+  user_id: string;
+  class_id: string;
+  subject_id: string;
+  date: string;
+  period: number; // Tiết học (1-7)
+  week_number: number; // Tuần học (1-35)
+  lesson_name: string; // Tên bài học
+  content: string | null; // Nội dung chi tiết
+  notes: string | null; // Ghi chú
+  created_at: string;
+  updated_at: string;
+  // Relations
+  users?: User;
+  classes?: Class;
+  subjects?: Subject;
 }
 
 // Tên máy tính (40 máy)

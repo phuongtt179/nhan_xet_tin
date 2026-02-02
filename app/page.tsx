@@ -2,10 +2,11 @@
 
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
-import { Layers, BookOpen, Users, ClipboardList, TrendingUp, Calendar } from 'lucide-react';
+import { Layers, BookOpen, Users, ClipboardList, TrendingUp, Calendar, PenLine, Edit2, Plus } from 'lucide-react';
 import Link from 'next/link';
 import { format, subDays } from 'date-fns';
-import { Class } from '@/lib/types';
+import { vi } from 'date-fns/locale';
+import { Class, TeachingDiary } from '@/lib/types';
 import { useAuth } from '@/contexts/AuthContext';
 
 interface Stats {
@@ -34,7 +35,7 @@ interface RecentAttendance {
 }
 
 export default function DashboardPage() {
-  const { isAdmin, getAssignedClassIds } = useAuth();
+  const { user, isAdmin, getAssignedClassIds } = useAuth();
   const [stats, setStats] = useState<Stats>({
     totalGrades: 0,
     totalClasses: 0,
@@ -46,6 +47,7 @@ export default function DashboardPage() {
   const [selectedYear, setSelectedYear] = useState<string>('2025-2026');
   const [classBreakdown, setClassBreakdown] = useState<ClassBreakdown[]>([]);
   const [recentAttendance, setRecentAttendance] = useState<RecentAttendance[]>([]);
+  const [todayDiary, setTodayDiary] = useState<TeachingDiary[]>([]);
 
   useEffect(() => {
     loadSchoolYears();
@@ -139,6 +141,9 @@ export default function DashboardPage() {
 
       // Load recent attendance (last 7 days)
       await loadRecentAttendance(classIds);
+
+      // Load today's diary entries
+      await loadTodayDiary();
     } catch (error) {
       console.error('Error loading stats:', error);
     } finally {
@@ -199,6 +204,34 @@ export default function DashboardPage() {
     }
 
     setRecentAttendance(recent.reverse());
+  }
+
+  async function loadTodayDiary() {
+    try {
+      const today = format(new Date(), 'yyyy-MM-dd');
+
+      let query = supabase
+        .from('teaching_diary')
+        .select(`
+          *,
+          classes (name, grades (name)),
+          subjects (name)
+        `)
+        .eq('date', today)
+        .order('period', { ascending: true });
+
+      // Filter by user if not admin
+      if (!isAdmin && user) {
+        query = query.eq('user_id', user.id);
+      }
+
+      const { data, error } = await query;
+
+      if (error) throw error;
+      setTodayDiary(data || []);
+    } catch (error) {
+      console.error('Error loading today diary:', error);
+    }
   }
 
   const statCards = [
@@ -320,56 +353,78 @@ export default function DashboardPage() {
             </div>
           )}
 
-          {/* Class Breakdown */}
-          {classBreakdown.length > 0 && (
-            <div className="bg-white rounded-lg lg:rounded-xl shadow-md p-4 lg:p-6 mb-6 lg:mb-8">
-              <h2 className="text-lg lg:text-xl font-bold text-gray-800 mb-4 flex items-center gap-2">
-                <BookOpen className="text-blue-500" size={20} />
-                Chi tiết theo lớp ({selectedYear})
+          {/* Today's Teaching Diary */}
+          <div className="bg-white rounded-lg lg:rounded-xl shadow-md p-4 lg:p-6 mb-6 lg:mb-8">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg lg:text-xl font-bold text-gray-800 flex items-center gap-2">
+                <PenLine className="text-purple-500" size={20} />
+                Nhật ký tiết dạy hôm nay ({format(new Date(), 'dd/MM/yyyy', { locale: vi })})
               </h2>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {classBreakdown.map((cls) => {
-                  const percentage = cls.today_total > 0
-                    ? Math.round((cls.today_present / cls.today_total) * 100)
-                    : 0;
+              <Link
+                href="/teaching-diary"
+                className="flex items-center gap-1 px-3 py-1.5 bg-purple-100 text-purple-700 rounded-lg hover:bg-purple-200 transition-colors text-sm font-semibold"
+              >
+                <Plus size={16} />
+                Thêm mới
+              </Link>
+            </div>
 
-                  return (
-                    <Link
-                      key={cls.id}
-                      href={`/attendance?class=${cls.id}`}
-                      className="border-2 border-gray-200 rounded-lg p-4 hover:border-blue-400 hover:shadow-lg transition-all"
-                    >
-                      <div className="flex justify-between items-start mb-3">
-                        <div>
-                          <h3 className="font-bold text-gray-800">{cls.name}</h3>
-                          <p className="text-xs text-gray-500">{cls.grade_name}</p>
-                        </div>
-                        <div className="bg-blue-100 text-blue-700 px-2 py-1 rounded-full text-xs font-semibold">
-                          {cls.student_count} HS
-                        </div>
-                      </div>
-                      <div className="space-y-2">
-                        <div className="flex justify-between text-sm">
-                          <span className="text-gray-600">Điểm danh hôm nay:</span>
-                          <span className="font-bold text-gray-800">
-                            {cls.today_present}/{cls.today_total}
+            {todayDiary.length === 0 ? (
+              <div className="text-center py-8 text-gray-500">
+                <PenLine size={48} className="mx-auto mb-3 opacity-30" />
+                <p>Chưa có nhật ký tiết dạy nào hôm nay</p>
+                <Link
+                  href="/teaching-diary"
+                  className="inline-block mt-3 text-purple-600 hover:text-purple-800 font-semibold"
+                >
+                  Thêm nhật ký tiết dạy →
+                </Link>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {todayDiary.map((entry) => (
+                  <div
+                    key={entry.id}
+                    className="border-2 border-gray-200 rounded-lg p-4 hover:border-purple-300 hover:shadow-md transition-all"
+                  >
+                    <div className="flex items-start justify-between">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 mb-2">
+                          <span className="px-2 py-0.5 bg-orange-100 text-orange-800 text-xs font-semibold rounded">
+                            Tiết {entry.period}
+                          </span>
+                          <span className="px-2 py-0.5 bg-purple-100 text-purple-800 text-xs font-semibold rounded">
+                            Tuần {entry.week_number}
+                          </span>
+                          <span className="text-sm text-blue-600 font-medium">
+                            {(entry as any).classes?.grades?.name} - {(entry as any).classes?.name}
                           </span>
                         </div>
-                        {cls.today_total > 0 && (
-                          <div className="w-full bg-gray-200 rounded-full h-2">
-                            <div
-                              className="bg-gradient-to-r from-green-400 to-green-600 h-2 rounded-full transition-all"
-                              style={{ width: `${percentage}%` }}
-                            ></div>
-                          </div>
+                        <h3 className="font-semibold text-gray-800">{entry.lesson_name}</h3>
+                        {entry.content && (
+                          <p className="text-gray-600 text-sm mt-1 line-clamp-2">{entry.content}</p>
                         )}
                       </div>
-                    </Link>
-                  );
-                })}
+                      <Link
+                        href="/teaching-diary"
+                        className="p-2 text-gray-400 hover:text-purple-600 hover:bg-purple-50 rounded-lg transition-colors"
+                        title="Chỉnh sửa"
+                      >
+                        <Edit2 size={18} />
+                      </Link>
+                    </div>
+                  </div>
+                ))}
+
+                <Link
+                  href="/teaching-diary/summary"
+                  className="block text-center py-3 text-purple-600 hover:text-purple-800 font-semibold border-t border-gray-200 mt-4"
+                >
+                  Xem tổng hợp nhật ký →
+                </Link>
               </div>
-            </div>
-          )}
+            )}
+          </div>
 
           {/* Recent Attendance Trend */}
           {recentAttendance.length > 0 && (

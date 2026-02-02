@@ -28,7 +28,9 @@ import {
   Settings,
   UserCog,
   BookMarked,
-  ClipboardPen
+  ClipboardPen,
+  PenLine,
+  List
 } from 'lucide-react';
 
 // Menu cho tất cả người dùng
@@ -37,6 +39,8 @@ const commonNavItems = [
   { href: '/attendance', icon: ClipboardList, label: 'Điểm danh' },
   { href: '/equipment-check', icon: Backpack, label: 'Kiểm tra đồ dùng' },
   { href: '/evaluations', icon: ClipboardCheck, label: 'Đánh giá' },
+  { href: '/teaching-diary', icon: PenLine, label: 'Nhật ký tiết dạy' },
+  { href: '/teaching-diary/summary', icon: List, label: 'Tổng hợp nhật ký' },
   { href: '/topics', icon: FileText, label: 'Quản lý Chủ đề' },
   { href: '/criteria', icon: CheckSquare, label: 'Quản lý Tiêu chí' },
   { href: '/topic-summary', icon: BarChart2, label: 'Tổng hợp chủ đề' },

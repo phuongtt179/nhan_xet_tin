@@ -35,6 +35,10 @@ export default function AttendancePage() {
   const [selectedSubjectId, setSelectedSubjectId] = useState<string>('');
   const [assignedSubjects, setAssignedSubjects] = useState<Subject[]>([]);
 
+  // Period selection (tiết học)
+  const [selectedPeriod, setSelectedPeriod] = useState<number>(1);
+  const PERIODS = [1, 2, 3, 4, 5, 6, 7]; // 7 tiết: 4 sáng + 3 chiều
+
   useEffect(() => {
     loadSchoolYears();
     if (!isAdmin) {
@@ -79,10 +83,10 @@ export default function AttendancePage() {
   }
 
   useEffect(() => {
-    if (selectedClassId && selectedDate) {
+    if (selectedClassId && selectedDate && selectedPeriod) {
       loadAttendance();
     }
-  }, [selectedClassId, selectedDate]);
+  }, [selectedClassId, selectedDate, selectedPeriod]);
 
   async function loadSchoolYears() {
     try {
@@ -155,12 +159,20 @@ export default function AttendancePage() {
 
       if (studentsError) throw studentsError;
 
-      // Get existing attendance records for this date
-      const { data: existingAttendance, error: attendanceError } = await supabase
+      // Get existing attendance records for this date, subject and period
+      let attendanceQuery = supabase
         .from('attendance')
         .select('*')
         .eq('class_id', selectedClassId)
-        .eq('date', selectedDate);
+        .eq('date', selectedDate)
+        .eq('period', selectedPeriod);
+
+      // Filter by subject if selected
+      if (selectedSubjectId) {
+        attendanceQuery = attendanceQuery.eq('subject_id', selectedSubjectId);
+      }
+
+      const { data: existingAttendance, error: attendanceError } = await attendanceQuery;
 
       if (attendanceError) throw attendanceError;
 
@@ -186,8 +198,8 @@ export default function AttendancePage() {
   }
 
   async function handleSave() {
-    if (!selectedClassId || !selectedDate) {
-      alert('Vui lòng chọn lớp và ngày');
+    if (!selectedClassId || !selectedDate || !selectedPeriod) {
+      alert('Vui lòng chọn lớp, ngày và tiết học');
       return;
     }
 
@@ -195,14 +207,21 @@ export default function AttendancePage() {
       setSaving(true);
 
       for (const record of attendanceRecords) {
-        // Check if record exists
-        const { data: existing } = await supabase
+        // Check if record exists (including subject_id and period)
+        let existingQuery = supabase
           .from('attendance')
           .select('id')
           .eq('student_id', record.studentId)
           .eq('class_id', selectedClassId)
           .eq('date', selectedDate)
-          .single();
+          .eq('period', selectedPeriod);
+
+        // Include subject_id in the check if selected
+        if (selectedSubjectId) {
+          existingQuery = existingQuery.eq('subject_id', selectedSubjectId);
+        }
+
+        const { data: existing } = await existingQuery.single();
 
         const status = record.isAbsent ? 'absent' : 'present';
 
@@ -217,13 +236,15 @@ export default function AttendancePage() {
             })
             .eq('id', existing.id);
         } else {
-          // Insert
+          // Insert with subject_id and period
           await supabase
             .from('attendance')
             .insert([{
               student_id: record.studentId,
               class_id: selectedClassId,
+              subject_id: selectedSubjectId || null,
               date: selectedDate,
+              period: selectedPeriod,
               status: status,
               note: record.note,
               user_id: user?.id || null,
@@ -295,7 +316,7 @@ export default function AttendancePage() {
             <h2 className="text-base lg:text-lg font-bold text-gray-800">Thông tin điểm danh</h2>
             {isControlsCollapsed && (
               <span className="text-sm text-gray-600">
-                {classes.find(c => c.id === selectedClassId)?.name || 'Chưa chọn'} - {format(new Date(selectedDate), 'dd/MM/yyyy')}
+                {classes.find(c => c.id === selectedClassId)?.name || 'Chưa chọn'} - {format(new Date(selectedDate), 'dd/MM/yyyy')} - Tiết {selectedPeriod}
               </span>
             )}
           </div>
@@ -329,7 +350,7 @@ export default function AttendancePage() {
               </div>
             )}
 
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-2">
                   Năm học <span className="text-red-500">*</span>
@@ -378,6 +399,23 @@ export default function AttendancePage() {
                   onChange={(e) => setSelectedDate(e.target.value)}
                   className="w-full max-w-full min-w-0 px-3 lg:px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none text-sm lg:text-base"
                 />
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  Tiết <span className="text-red-500">*</span>
+                </label>
+                <select
+                  value={selectedPeriod}
+                  onChange={(e) => setSelectedPeriod(Number(e.target.value))}
+                  className="w-full px-3 lg:px-4 py-2 border-2 border-orange-300 rounded-lg focus:border-orange-500 focus:outline-none text-sm lg:text-base bg-orange-50"
+                >
+                  {PERIODS.map((period) => (
+                    <option key={period} value={period}>
+                      Tiết {period} {period <= 4 ? '(Sáng)' : '(Chiều)'}
+                    </option>
+                  ))}
+                </select>
               </div>
             </div>
           </div>
