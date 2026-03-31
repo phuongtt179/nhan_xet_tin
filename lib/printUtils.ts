@@ -1,5 +1,122 @@
 import { format } from 'date-fns';
 
+// ─── Tổng hợp cuối kì ────────────────────────────────────────────────────────
+export function printSemesterSummary({
+  className,
+  gradeName,
+  subjectName,
+  weekFrom,
+  weekTo,
+  rows,
+}: {
+  className: string;
+  gradeName: string;
+  subjectName: string;
+  weekFrom: number;
+  weekTo: number;
+  rows: {
+    name: string;
+    computer_name: string | null;
+    weeks: Record<number, string>;
+    total: string;
+  }[];
+}) {
+  const weekRange = Array.from({ length: weekTo - weekFrom + 1 }, (_, i) => weekFrom + i);
+  const exportDate = format(new Date(), 'dd/MM/yyyy HH:mm');
+
+  const SHORT: Record<string, string> = {
+    'Hoàn thành tốt': 'T',
+    'Hoàn thành': 'H',
+    'Chưa hoàn thành': 'C',
+  };
+
+  const CELL_STYLE: Record<string, string> = {
+    'Hoàn thành tốt': 'color:#15803d;font-weight:bold;',
+    'Hoàn thành': 'color:#1d4ed8;font-weight:bold;',
+    'Chưa hoàn thành': 'color:#b91c1c;font-weight:bold;',
+  };
+
+  // Dùng font size nhỏ hơn khi nhiều tuần
+  const totalCols = weekRange.length + 3; // STT + Tên + tuần... + Tổng
+  const isLandscape = totalCols > 12;
+  const fontSize = totalCols > 20 ? '7pt' : totalCols > 14 ? '8pt' : '9pt';
+
+  const html = `<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <title>Tổng hợp cuối kì - ${className}</title>
+  <style>
+    @page { size: A4 ${isLandscape ? 'landscape' : 'portrait'}; margin: 12mm; }
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body { font-family:'Times New Roman',Times,serif; font-size:${fontSize}; line-height:1.3; }
+    .header { text-align:center; margin-bottom:14px; }
+    .header h1 { font-size:15pt; font-weight:bold; margin-bottom:5px; }
+    .header .sub { font-size:11pt; margin-bottom:3px; }
+    .header .meta { font-size:9pt; color:#555; font-style:italic; }
+    table { width:100%; border-collapse:collapse; margin-top:6px; }
+    th,td { border:1px solid #444; padding:4px 3px; text-align:center; }
+    th { background-color:#4c1d95; color:#fff; font-weight:bold; font-size:${fontSize}; }
+    th.name-col { text-align:left; }
+    td.name-cell { text-align:left; font-weight:600; white-space:nowrap; }
+    td.total-cell { background:#f3e8ff; font-weight:bold; }
+    tr:nth-child(even) td { background:#fafafa; }
+    tr:nth-child(even) td.total-cell { background:#ede9fe; }
+    .legend { margin-top:10px; font-size:8pt; color:#555; display:flex; gap:16px; flex-wrap:wrap; }
+    .no-print { text-align:center; margin-top:14px; }
+    @media print { .no-print { display:none; } body { print-color-adjust:exact; -webkit-print-color-adjust:exact; } }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>BẢNG TỔNG HỢP CUỐI KÌ</h1>
+    <div class="sub">${gradeName} - Lớp ${className} &nbsp;|&nbsp; Môn: ${subjectName}</div>
+    <div class="meta">Tuần ${weekFrom} – ${weekTo} &nbsp;·&nbsp; Ngày xuất: ${exportDate}</div>
+  </div>
+
+  <table>
+    <thead>
+      <tr>
+        <th style="width:28px">STT</th>
+        <th class="name-col" style="min-width:110px">Họ và tên</th>
+        ${weekRange.map(w => `<th>T${w}</th>`).join('')}
+        <th style="min-width:70px;background:#3b0764">Tổng</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${rows.map((r, i) => `
+        <tr>
+          <td>${i + 1}</td>
+          <td class="name-cell">${r.name}${r.computer_name ? ` <span style="color:#999;font-size:7pt">(${r.computer_name})</span>` : ''}</td>
+          ${weekRange.map(w => {
+            const v = r.weeks[w] || '';
+            return `<td>${v ? `<span style="${CELL_STYLE[v] || ''}">${SHORT[v] || v}</span>` : '<span style="color:#ccc">–</span>'}</td>`;
+          }).join('')}
+          <td class="total-cell">${r.total ? `<span style="${CELL_STYLE[r.total] || ''}">${r.total}</span>` : '<span style="color:#ccc">–</span>'}</td>
+        </tr>`).join('')}
+    </tbody>
+  </table>
+
+  <div class="legend">
+    <span><b style="color:#15803d">T</b> = Hoàn thành tốt</span>
+    <span><b style="color:#1d4ed8">H</b> = Hoàn thành</span>
+    <span><b style="color:#b91c1c">C</b> = Chưa hoàn thành</span>
+    <span style="color:#aaa">– = Chưa có dữ liệu</span>
+    <span style="margin-left:auto;font-style:italic">* Rating 4 (Rất tốt) được tính vào Hoàn thành tốt</span>
+  </div>
+
+  <div class="no-print">
+    <button onclick="window.print()" style="margin-top:16px;padding:10px 24px;font-size:13pt;background:#4c1d95;color:#fff;border:none;border-radius:6px;cursor:pointer">
+      In / Lưu PDF (Ctrl+P)
+    </button>
+  </div>
+  <script>window.onload=function(){setTimeout(()=>window.print(),500);};</script>
+</body>
+</html>`;
+
+  openPrintWindow(html);
+}
+
 function openPrintWindow(html: string) {
   // Use Blob URL - more reliable than document.write()
   const blob = new Blob([html], { type: 'text/html;charset=utf-8' });

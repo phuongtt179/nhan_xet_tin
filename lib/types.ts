@@ -203,6 +203,23 @@ export interface EquipmentCheck {
   users?: User;
 }
 
+// Phân phối chương trình
+export interface Curriculum {
+  id: string;
+  grade_id: string;
+  subject_id: string;
+  school_year: string;
+  week_number: number;
+  period_number: number | null;
+  lesson_name: string;
+  description: string | null;
+  created_at: string;
+  updated_at: string;
+  // Relations
+  grades?: Grade;
+  subjects?: Subject;
+}
+
 // Nhật ký tiết dạy
 export interface TeachingDiary {
   id: string;

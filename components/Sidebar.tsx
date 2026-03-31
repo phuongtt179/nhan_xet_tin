@@ -30,7 +30,9 @@ import {
   BookMarked,
   ClipboardPen,
   PenLine,
-  List
+  List,
+  BookText,
+  GraduationCap
 } from 'lucide-react';
 
 // Menu cho tất cả người dùng
@@ -47,6 +49,7 @@ const commonNavItems = [
   { href: '/student-summary', icon: UserCheck, label: 'Tổng hợp học sinh' },
   { href: '/attendance-summary', icon: CalendarCheck, label: 'Thống kê buổi học' },
   { href: '/equipment-summary', icon: Package, label: 'Thống kê đồ dùng' },
+  { href: '/semester-summary', icon: GraduationCap, label: 'Tổng hợp cuối kì' },
 ];
 
 // Menu chỉ dành cho Admin
@@ -54,6 +57,7 @@ const adminNavItems = [
   { href: '/admin/users', icon: UserCog, label: 'Quản lý giáo viên' },
   { href: '/admin/subjects', icon: BookMarked, label: 'Quản lý môn học' },
   { href: '/admin/assignments', icon: ClipboardPen, label: 'Phân công giảng dạy' },
+  { href: '/admin/curriculum', icon: BookText, label: 'Phân phối chương trình' },
   { href: '/grades', icon: Layers, label: 'Khối lớp' },
   { href: '/classes', icon: BookOpen, label: 'Lớp học' },
   { href: '/year-transition', icon: RefreshCw, label: 'Chuyển năm học' },

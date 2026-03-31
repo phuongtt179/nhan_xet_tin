@@ -2,26 +2,24 @@
 
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
-import { Class, Subject, TeachingDiary } from '@/lib/types';
+import { Class, Subject, TeachingDiary, Curriculum } from '@/lib/types';
 import { useAuth } from '@/contexts/AuthContext';
 import { Save, Plus, Edit2, Trash2, BookOpen, ChevronDown, ChevronUp } from 'lucide-react';
-import { format, getWeek, startOfYear } from 'date-fns';
+import { format, getWeek } from 'date-fns';
 import { vi } from 'date-fns/locale';
 
 const PERIODS = [1, 2, 3, 4, 5, 6, 7];
 
-// Tính tuần học từ ngày (giả sử năm học bắt đầu từ tuần 35 của năm dương lịch)
+// Tuần học bắt đầu từ ISO week 38 (khoảng 15/9)
+// Tuần 1 = ISO week 38, tuần 29 = ISO week 14 của năm sau
+const SCHOOL_YEAR_START_WEEK = 38;
+
 function getSchoolWeek(date: Date): number {
   const currentWeek = getWeek(date, { weekStartsOn: 1 });
-  // Năm học thường bắt đầu vào khoảng tuần 35 (đầu tháng 9)
-  // Tuần học 1 = tuần 35 của năm dương lịch
-  const schoolYearStartWeek = 35;
-
-  if (currentWeek >= schoolYearStartWeek) {
-    return currentWeek - schoolYearStartWeek + 1;
+  if (currentWeek >= SCHOOL_YEAR_START_WEEK) {
+    return currentWeek - SCHOOL_YEAR_START_WEEK + 1;
   } else {
-    // Năm mới, tính tiếp từ tuần trước
-    return (52 - schoolYearStartWeek) + currentWeek + 1;
+    return (52 - SCHOOL_YEAR_START_WEEK) + currentWeek + 1;
   }
 }
 
@@ -45,6 +43,10 @@ export default function TeachingDiaryPage() {
   // Subject selection
   const [selectedSubjectId, setSelectedSubjectId] = useState<string>('');
   const [assignedSubjects, setAssignedSubjects] = useState<Subject[]>([]);
+
+  // Curriculum
+  const [curriculumList, setCurriculumList] = useState<Curriculum[]>([]);
+  const [useCustomLesson, setUseCustomLesson] = useState(false);
 
   // Existing diary entries
   const [diaryEntries, setDiaryEntries] = useState<TeachingDiary[]>([]);
@@ -81,6 +83,14 @@ export default function TeachingDiaryPage() {
       loadDiaryEntries();
     }
   }, [selectedSubjectId, selectedDate]);
+
+  useEffect(() => {
+    if (selectedSubjectId && selectedClassId) {
+      loadCurriculum();
+    } else {
+      setCurriculumList([]);
+    }
+  }, [selectedSubjectId, selectedClassId, weekNumber, selectedYear]);
 
   async function loadAllSubjects() {
     try {
@@ -187,6 +197,32 @@ export default function TeachingDiaryPage() {
     }
   }
 
+  async function loadCurriculum() {
+    try {
+      // Lấy grade_id từ lớp đang chọn
+      const selectedClass = classes.find(c => c.id === selectedClassId);
+      if (!selectedClass) return;
+
+      const { data, error } = await supabase
+        .from('curriculum')
+        .select('*')
+        .eq('grade_id', selectedClass.grade_id)
+        .eq('subject_id', selectedSubjectId)
+        .eq('school_year', selectedYear)
+        .eq('week_number', weekNumber)
+        .order('period_number', { ascending: true, nullsFirst: true });
+
+      if (error) throw error;
+      setCurriculumList(data || []);
+      // Reset về dropdown nếu có dữ liệu
+      if (data && data.length > 0 && !editingId) {
+        setUseCustomLesson(false);
+      }
+    } catch (err) {
+      console.error('Error loading curriculum:', err);
+    }
+  }
+
   async function handleSave() {
     if (!selectedClassId || !selectedSubjectId || !lessonName.trim()) {
       alert('Vui lòng chọn lớp, môn học và nhập tên bài học');
@@ -279,6 +315,7 @@ export default function TeachingDiaryPage() {
     setContent(entry.content || '');
     setNotes(entry.notes || '');
     setEditingId(entry.id);
+    setUseCustomLesson(true); // Khi sửa, luôn dùng text input
     setIsFormCollapsed(false);
   }
 
@@ -434,16 +471,50 @@ export default function TeachingDiaryPage() {
             </div>
 
             <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-2">
-                Tên bài học <span className="text-red-500">*</span>
-              </label>
-              <input
-                type="text"
-                value={lessonName}
-                onChange={(e) => setLessonName(e.target.value)}
-                placeholder="VD: Bài 4: Chèn ảnh vào văn bản"
-                className="w-full px-3 py-2 border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none text-sm"
-              />
+              <div className="flex items-center justify-between mb-2">
+                <label className="block text-sm font-semibold text-gray-700">
+                  Tên bài học <span className="text-red-500">*</span>
+                </label>
+                {curriculumList.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setUseCustomLesson(!useCustomLesson);
+                      if (!useCustomLesson) setLessonName('');
+                    }}
+                    className="text-xs text-blue-600 hover:underline"
+                  >
+                    {useCustomLesson ? '← Chọn từ chương trình' : 'Nhập tay...'}
+                  </button>
+                )}
+              </div>
+              {curriculumList.length > 0 && !useCustomLesson ? (
+                <select
+                  value={lessonName}
+                  onChange={(e) => setLessonName(e.target.value)}
+                  className="w-full px-3 py-2 border-2 border-blue-300 rounded-lg focus:border-blue-500 focus:outline-none text-sm bg-blue-50"
+                >
+                  <option value="">-- Chọn bài học từ chương trình --</option>
+                  {curriculumList.map((c) => (
+                    <option key={c.id} value={c.lesson_name}>
+                      {c.period_number ? `Tiết ${c.period_number}: ` : ''}{c.lesson_name}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <input
+                  type="text"
+                  value={lessonName}
+                  onChange={(e) => setLessonName(e.target.value)}
+                  placeholder={curriculumList.length === 0 ? 'VD: Bài 4: Chèn ảnh vào văn bản (chưa có PPCT cho tuần này)' : 'Nhập tên bài học...'}
+                  className="w-full px-3 py-2 border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none text-sm"
+                />
+              )}
+              {curriculumList.length === 0 && selectedClassId && selectedSubjectId && (
+                <p className="text-xs text-amber-600 mt-1">
+                  ⚠ Chưa có phân phối chương trình cho tuần {weekNumber}. Admin có thể thêm tại mục "Phân phối chương trình".
+                </p>
+              )}
             </div>
 
             <div>
