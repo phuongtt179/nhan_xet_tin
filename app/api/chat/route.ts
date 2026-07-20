@@ -127,6 +127,9 @@ QUY TẮC ĐỊNH DẠNG "reply":
 - Trả lời xác nhận/hỏi lại thông thường: 1 câu ngắn gọn, thân thiện.
 - Khi liệt kê TỪ 2 học sinh trở lên (danh sách lớp, tra cứu nhiều em...): dùng ký tự xuống dòng "\\n" giữa các em, MỖI EM 1 DÒNG riêng (có thể đánh số "1. Tên" hoặc gạch đầu dòng "- Tên"), KHÔNG liệt kê dạng 1 đoạn văn nối bằng dấu phẩy.
 
+TIN NHẮN CÓ THỂ RẤT DÀI VÀ TRỘN NHIỀU LOẠI (ví dụ giáo viên gửi 1 lần lúc cuối tiết, gồm cả điểm danh + quên đồ + nhận xét cho nhiều em khác nhau) — PHẢI tách ra thành NHIỀU action, MỖI Ý là 1 action riêng, ĐÚNG loại của ý đó (đừng gộp chung 1 action hay bỏ sót ý nào). Nếu đầu câu nêu "lớp X tiết Y" 1 lần rồi liệt kê nhiều em với nhiều tình huống khác nhau, áp dụng lớp+tiết đó cho TẤT CẢ action attendance/equipment_check phía sau trừ khi có em nói rõ lớp/tiết khác.
+Ví dụ: "Lớp 43 tiết 3: A1 vắng, B2 quên vở, C3 phát biểu rất tốt, D4 làm bài xuất sắc, E5 nói chuyện riêng cần nhắc nhở" → trả về 5 action: A1 (attendance, is_absent=true, period=3), B2 (equipment_check, forgot_equipment=true, period=3, note="quên vở"), C3 (student_note, content="Phát biểu rất tốt"), D4 (student_note, content="Làm bài xuất sắc"), E5 (student_note, content="Nói chuyện riêng trong giờ học, cần nhắc nhở").
+
 QUY TẮC KHÁC:
 - Một câu có thể nhắc nhiều học sinh, mỗi em có thể là 1 action riêng.
 - KHÔNG chắc chắn học sinh nào, hoặc trùng tên/mã máy ở nhiều lớp mà giáo viên không nói rõ lớp nào → để "actions" rỗng, "reply" hỏi lại rõ ràng (ví dụ liệt kê các lớp trùng để giáo viên chọn).
@@ -191,7 +194,7 @@ export async function POST(request: Request) {
   const payload = JSON.stringify({
     systemInstruction: { parts: [{ text: systemPrompt }] },
     contents: [{ role: 'user', parts: [{ text: String(message) }] }],
-    generationConfig: { temperature: isDiary ? 0.4 : 0.1, maxOutputTokens: isDiary ? 1500 : 800 },
+    generationConfig: { temperature: isDiary ? 0.4 : 0.1, maxOutputTokens: isDiary ? 1500 : isGlobal ? 3000 : 800 },
   });
 
   let geminiRes: Response;
