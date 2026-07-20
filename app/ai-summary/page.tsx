@@ -128,6 +128,7 @@ export default function AiSummaryPage() {
           mode,
           studentId: mode === 'student' ? selectedStudentId : undefined,
           classId: selectedClassId,
+          userId: user?.id || null,
           isAdmin,
           startDate,
           endDate,

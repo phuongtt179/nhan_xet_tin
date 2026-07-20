@@ -16,6 +16,7 @@ interface RequestBody {
   mode: 'student' | 'class';
   studentId?: string;
   classId: string;
+  userId: string | null;
   isAdmin: boolean;
   startDate: string;
   endDate: string;
@@ -172,7 +173,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'invalid_body' }, { status: 400 });
   }
 
-  const { mode, studentId, classId, isAdmin, startDate, endDate, periodLabel } = body;
+  const { mode, studentId, classId, userId, isAdmin, startDate, endDate, periodLabel } = body;
 
   if (!classId || !startDate || !endDate) {
     return NextResponse.json({ error: 'missing_params' }, { status: 400 });
@@ -192,11 +193,12 @@ export async function POST(request: Request) {
   }
 
   let includeCharacter = isAdmin;
-  if (!includeCharacter) {
+  if (!includeCharacter && userId) {
     const { data: homeroomAssignments } = await supabase
       .from('teacher_assignments')
       .select('is_homeroom')
       .eq('class_id', classId)
+      .eq('user_id', userId)
       .eq('is_homeroom', true);
     includeCharacter = !!(homeroomAssignments && homeroomAssignments.length > 0);
   }

@@ -3,8 +3,15 @@
 import { useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
-import { MessageCircle, X } from 'lucide-react';
-import { format } from 'date-fns';
+import { MessageCircle, X, Save, Check } from 'lucide-react';
+import { format, getWeek } from 'date-fns';
+
+// Đồng bộ với app/teaching-diary/page.tsx — tuần học bắt đầu từ ISO week 38 (khoảng 15/9)
+const SCHOOL_YEAR_START_WEEK = 38;
+function getSchoolWeek(date: Date): number {
+  const w = getWeek(date, { weekStartsOn: 1 });
+  return w >= SCHOOL_YEAR_START_WEEK ? w - SCHOOL_YEAR_START_WEEK + 1 : 52 - SCHOOL_YEAR_START_WEEK + w + 1;
+}
 
 interface GlobalStudent {
   id: string;
@@ -15,7 +22,7 @@ interface GlobalStudent {
 }
 
 interface ChatAction {
-  type: 'attendance' | 'equipment_check' | 'student_note';
+  type: 'attendance' | 'equipment_check' | 'student_note' | 'lesson_note' | 'request_summary';
   student_id: string;
   class_id: string;
   description: string;
@@ -24,15 +31,36 @@ interface ChatAction {
   forgot_equipment?: boolean;
   note?: string;
   content?: string;
+  lesson_name?: string;
+  lesson_content?: string;
+  start_date?: string;
+  end_date?: string;
+  period_label?: string;
+}
+
+interface SummaryResultData {
+  student_id: string;
+  class_id: string;
+  student_name: string;
+  competency_text: string;
+  character_text: string | null;
+  overall_rating: string;
+  overall_reason: string;
+  includeCharacter: boolean;
+  period_label: string;
+  error?: string;
 }
 
 interface ChatMessage {
   id: string;
-  kind: 'user' | 'ai-text' | 'ai-action-proposal' | 'system';
+  kind: 'user' | 'ai-text' | 'ai-action-proposal' | 'ai-summary-result' | 'system';
   text?: string;
   actions?: ChatAction[];
+  summary?: SummaryResultData;
   resolved?: boolean;
 }
+
+const RATING_OPTIONS = ['Hoàn thành tốt', 'Hoàn thành', 'Chưa hoàn thành'];
 
 function studentLabel(roster: GlobalStudent[], studentId: string): string {
   const s = roster.find((s) => s.id === studentId);
@@ -53,6 +81,10 @@ export default function GlobalChatWidget() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
+  const [summaryEdits, setSummaryEdits] = useState<
+    Record<string, { competency: string; character: string; rating: string }>
+  >({});
+  const [summarySaved, setSummarySaved] = useState<Record<string, boolean>>({});
 
   if (authLoading || !user) return null;
 
@@ -235,6 +267,73 @@ export default function GlobalChatWidget() {
     if (error) throw error;
   }
 
+  async function writeLessonNote(classId: string, period: number, lessonName: string, lessonContent: string) {
+    const today = format(new Date(), 'yyyy-MM-dd');
+    const { data: existing } = await supabase
+      .from('teaching_diary')
+      .select('id')
+      .eq('class_id', classId)
+      .eq('date', today)
+      .eq('period', period)
+      .single();
+
+    if (existing) {
+      const { error } = await supabase
+        .from('teaching_diary')
+        .update({ lesson_name: lessonName, content: lessonContent || null })
+        .eq('id', existing.id);
+      if (error) throw error;
+    } else {
+      const { error } = await supabase.from('teaching_diary').insert([
+        {
+          user_id: user?.id || null,
+          class_id: classId,
+          subject_id: null,
+          date: today,
+          period,
+          week_number: getSchoolWeek(new Date()),
+          lesson_name: lessonName,
+          content: lessonContent || null,
+        },
+      ]);
+      if (error) throw error;
+    }
+  }
+
+  async function generateSummary(action: ChatAction): Promise<SummaryResultData> {
+    const res = await fetch('/api/ai-summary', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        mode: 'student',
+        studentId: action.student_id,
+        classId: action.class_id,
+        userId: user?.id || null,
+        isAdmin,
+        startDate: action.start_date,
+        endDate: action.end_date,
+        periodLabel: action.period_label || '',
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok || !data.results || data.results.length === 0) {
+      throw new Error(data.error || 'Không tạo được tổng hợp.');
+    }
+    const r = data.results[0];
+    return {
+      student_id: action.student_id,
+      class_id: action.class_id,
+      student_name: r.student_name,
+      competency_text: r.competency_text,
+      character_text: r.character_text,
+      overall_rating: r.overall_rating,
+      overall_reason: r.overall_reason,
+      includeCharacter: !!data.includeCharacter,
+      period_label: action.period_label || '',
+      error: r.error,
+    };
+  }
+
   async function handleConfirm(messageId: string) {
     const message = messages.find((m) => m.id === messageId);
     if (!message || !message.actions) return;
@@ -262,6 +361,27 @@ export default function GlobalChatWidget() {
         } else if (action.type === 'student_note') {
           await writeStudentNote(action.student_id, action.class_id, action.content || '');
           results.push(`${label}: đã lưu nhận xét ✅`);
+        } else if (action.type === 'lesson_note') {
+          const className = roster.find((s) => s.class_id === action.class_id)?.class_name || action.class_id;
+          await writeLessonNote(action.class_id, action.period || 1, action.lesson_name || '', action.lesson_content || '');
+          results.push(`Lớp ${className}: đã lưu tên bài học "${action.lesson_name}" ✅`);
+        } else if (action.type === 'request_summary') {
+          const summary = await generateSummary(action);
+          if (summary.error) {
+            results.push(`${label}: lỗi khi tạo tổng hợp (${summary.error}) ❌`);
+          } else {
+            const summaryMsgId = nextId();
+            setSummaryEdits((prev) => ({
+              ...prev,
+              [summaryMsgId]: {
+                competency: summary.competency_text,
+                character: summary.character_text || '',
+                rating: summary.overall_rating,
+              },
+            }));
+            appendMessage({ id: summaryMsgId, kind: 'ai-summary-result', summary, resolved: false });
+            results.push(`${label}: đã tạo tổng hợp (${summary.period_label}) — xem bên dưới để duyệt và lưu.`);
+          }
         }
       } catch (err: any) {
         results.push(`${label}: lỗi khi lưu (${err?.message || 'không rõ'}) ❌`);
@@ -274,6 +394,34 @@ export default function GlobalChatWidget() {
   function handleCancel(messageId: string) {
     setMessages((prev) => prev.map((m) => (m.id === messageId ? { ...m, resolved: true } : m)));
     appendMessage({ id: nextId(), kind: 'system', text: 'Đã hủy.' });
+  }
+
+  async function handleSaveSummary(messageId: string) {
+    const message = messages.find((m) => m.id === messageId);
+    const edit = summaryEdits[messageId];
+    if (!message || !message.summary || !edit) return;
+
+    let content = `[Năng lực] ${edit.competency}`;
+    if (message.summary.includeCharacter && edit.character) content += `\n[Phẩm chất] ${edit.character}`;
+    content += `\n[Xếp loại] ${edit.rating}`;
+
+    const { error } = await supabase.from('student_notes').insert([
+      {
+        student_id: message.summary.student_id,
+        class_id: message.summary.class_id,
+        subject_id: null,
+        user_id: user?.id || null,
+        date: format(new Date(), 'yyyy-MM-dd'),
+        content,
+        category: 'summary_month',
+      },
+    ]);
+
+    if (error) {
+      appendMessage({ id: nextId(), kind: 'system', text: `Lỗi khi lưu tổng hợp: ${error.message}` });
+      return;
+    }
+    setSummarySaved((prev) => ({ ...prev, [messageId]: true }));
   }
 
   return (
@@ -301,8 +449,12 @@ export default function GlobalChatWidget() {
               <div className="text-sm text-gray-500">Chưa có lớp/học sinh nào được phân công.</div>
             )}
             {rosterLoaded && roster.length > 0 && messages.length === 0 && (
-              <div className="text-sm text-gray-500">
-                Nói tự nhiên, ví dụ: &quot;Em A3 lớp 4A hôm nay phát biểu rất tốt&quot;, &quot;B1 lớp 5B vắng tiết 2&quot;...
+              <div className="text-sm text-gray-500 space-y-1">
+                <p>Nói tự nhiên, ví dụ:</p>
+                <p>&quot;A3 lớp 4A hôm nay phát biểu rất tốt&quot;</p>
+                <p>&quot;Lớp 43 tiết 3: A1 vắng, B2 quên vở&quot;</p>
+                <p>&quot;Lớp 43 tiết 3 dạy bài Vòng lặp&quot;</p>
+                <p>&quot;Tổng hợp nhận xét em A1 lớp 43 tháng 3&quot;</p>
               </div>
             )}
 
@@ -346,6 +498,71 @@ export default function GlobalChatWidget() {
                         </button>
                       </div>
                     )}
+                  </div>
+                );
+              }
+              if (m.kind === 'ai-summary-result' && m.summary) {
+                const edit = summaryEdits[m.id] || { competency: '', character: '', rating: m.summary.overall_rating };
+                const saved = !!summarySaved[m.id];
+                return (
+                  <div key={m.id} className="bg-purple-50 border border-purple-200 rounded-lg p-3 text-sm space-y-2">
+                    <div className="flex items-center justify-between flex-wrap gap-2">
+                      <div className="font-semibold">
+                        {m.summary.student_name} — {m.summary.period_label}
+                      </div>
+                      <select
+                        value={edit.rating}
+                        onChange={(e) =>
+                          setSummaryEdits((prev) => ({ ...prev, [m.id]: { ...edit, rating: e.target.value } }))
+                        }
+                        className="px-2 py-1 rounded border border-purple-300 text-xs font-medium bg-white"
+                      >
+                        {RATING_OPTIONS.map((opt) => (
+                          <option key={opt} value={opt}>
+                            {opt}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-500 mb-1">Năng lực</label>
+                      <textarea
+                        value={edit.competency}
+                        onChange={(e) =>
+                          setSummaryEdits((prev) => ({ ...prev, [m.id]: { ...edit, competency: e.target.value } }))
+                        }
+                        rows={3}
+                        className="w-full px-2 py-1.5 border border-gray-300 rounded text-sm resize-none"
+                      />
+                    </div>
+
+                    {m.summary.includeCharacter && (
+                      <div>
+                        <label className="block text-xs font-semibold text-gray-500 mb-1">Phẩm chất (GVCN)</label>
+                        <textarea
+                          value={edit.character}
+                          onChange={(e) =>
+                            setSummaryEdits((prev) => ({ ...prev, [m.id]: { ...edit, character: e.target.value } }))
+                          }
+                          rows={3}
+                          className="w-full px-2 py-1.5 border border-gray-300 rounded text-sm resize-none"
+                        />
+                      </div>
+                    )}
+
+                    {m.summary.overall_reason && (
+                      <p className="text-xs text-gray-500 italic">Gợi ý: {m.summary.overall_reason}</p>
+                    )}
+
+                    <button
+                      onClick={() => handleSaveSummary(m.id)}
+                      disabled={saved}
+                      className="flex items-center gap-2 px-3 py-2 bg-purple-600 text-white rounded-lg text-sm font-medium min-h-[44px] hover:bg-purple-700 disabled:bg-green-600"
+                    >
+                      {saved ? <Check size={16} /> : <Save size={16} />}
+                      {saved ? 'Đã lưu' : 'Lưu bản tổng hợp'}
+                    </button>
                   </div>
                 );
               }
