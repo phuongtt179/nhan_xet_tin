@@ -6,6 +6,7 @@ import { Class, Topic, Criterion, Student, Subject } from '@/lib/types';
 import { useAuth } from '@/contexts/AuthContext';
 import { Save, ChevronDown, ChevronUp } from 'lucide-react';
 import { format } from 'date-fns';
+import ChatBox from '@/components/ChatBox';
 
 interface StudentEvaluation {
   studentId: string;
@@ -695,6 +696,30 @@ export default function EvaluationsPage() {
             <p className="mt-2 text-xs lg:text-sm text-gray-600">
               Nhấp vào ô để thay đổi: H → T → RT → C → H
             </p>
+          </div>
+
+          <div className="mt-4 lg:mt-6">
+            <ChatBox
+              pageType="evaluation"
+              classId={selectedClassId}
+              className={classes.find((c) => c.id === selectedClassId)?.name || ''}
+              subjectId={selectedSubjectId || undefined}
+              subjectName={assignedSubjects.find((s) => s.id === selectedSubjectId)?.name}
+              date={selectedDate}
+              criterionId={selectedCriterionId}
+              criterionName={selectedCriterion?.name}
+              students={students.map((s) => ({
+                id: s.studentId,
+                name: s.studentName,
+                computer_name: s.computerName,
+              }))}
+              absentStudentIds={new Set(students.filter((s) => s.isAbsent).map((s) => s.studentId))}
+              onEvaluationConfirmed={(studentId, rating) => {
+                setStudents((prev) =>
+                  prev.map((s) => (s.studentId === studentId ? { ...s, rating } : s))
+                );
+              }}
+            />
           </div>
         </>
       )}

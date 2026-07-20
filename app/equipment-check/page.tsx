@@ -6,6 +6,7 @@ import { Class, Subject } from '@/lib/types';
 import { useAuth } from '@/contexts/AuthContext';
 import { Save, ChevronDown, ChevronUp, Backpack } from 'lucide-react';
 import { format } from 'date-fns';
+import ChatBox from '@/components/ChatBox';
 
 interface EquipmentRecord {
   studentId: string;
@@ -578,6 +579,30 @@ export default function EquipmentCheckPage() {
             <p className="mt-2 text-xs lg:text-sm text-gray-600">
               Nhấp vào ô để chuyển đổi: Đầy đủ ↔ Quên đồ
             </p>
+          </div>
+
+          <div className="mt-4 lg:mt-6">
+            <ChatBox
+              pageType="equipment_check"
+              classId={selectedClassId}
+              className={classes.find((c) => c.id === selectedClassId)?.name || ''}
+              subjectId={selectedSubjectId || undefined}
+              subjectName={assignedSubjects.find((s) => s.id === selectedSubjectId)?.name}
+              date={selectedDate}
+              period={selectedPeriod}
+              students={equipmentRecords.map((r) => ({
+                id: r.studentId,
+                name: r.studentName,
+                computer_name: r.computerName,
+              }))}
+              onEquipmentConfirmed={(studentId, forgotEquipment, note) => {
+                setEquipmentRecords((records) =>
+                  records.map((r) =>
+                    r.studentId === studentId ? { ...r, forgotEquipment, note } : r
+                  )
+                );
+              }}
+            />
           </div>
         </>
       )}

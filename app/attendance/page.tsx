@@ -6,6 +6,7 @@ import { Class, Subject } from '@/lib/types';
 import { useAuth } from '@/contexts/AuthContext';
 import { Save, ChevronDown, ChevronUp } from 'lucide-react';
 import { format } from 'date-fns';
+import ChatBox from '@/components/ChatBox';
 
 interface AttendanceRecord {
   studentId: string;
@@ -585,6 +586,28 @@ export default function AttendancePage() {
             <p className="mt-2 text-xs lg:text-sm text-gray-600">
               Nhấp vào ô để chuyển đổi: Có mặt ↔ Vắng
             </p>
+          </div>
+
+          <div className="mt-4 lg:mt-6">
+            <ChatBox
+              pageType="attendance"
+              classId={selectedClassId}
+              className={classes.find((c) => c.id === selectedClassId)?.name || ''}
+              subjectId={selectedSubjectId || undefined}
+              subjectName={assignedSubjects.find((s) => s.id === selectedSubjectId)?.name}
+              date={selectedDate}
+              period={selectedPeriod}
+              students={attendanceRecords.map((r) => ({
+                id: r.studentId,
+                name: r.studentName,
+                computer_name: r.computerName,
+              }))}
+              onAttendanceConfirmed={(studentId, isAbsent) => {
+                setAttendanceRecords((records) =>
+                  records.map((r) => (r.studentId === studentId ? { ...r, isAbsent } : r))
+                );
+              }}
+            />
           </div>
         </>
       )}

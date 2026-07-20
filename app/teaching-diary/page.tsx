@@ -7,6 +7,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { Save, Plus, Edit2, Trash2, BookOpen, ChevronDown, ChevronUp } from 'lucide-react';
 import { format, getWeek } from 'date-fns';
 import { vi } from 'date-fns/locale';
+import ChatBox from '@/components/ChatBox';
 
 const PERIODS = [1, 2, 3, 4, 5, 6, 7];
 
@@ -469,6 +470,24 @@ export default function TeachingDiaryPage() {
                 />
               </div>
             </div>
+
+            {selectedClassId && selectedSubjectId && (
+              <ChatBox
+                pageType="teaching_diary"
+                classId={selectedClassId}
+                className={classes.find((c) => c.id === selectedClassId)?.name || ''}
+                subjectId={selectedSubjectId || undefined}
+                subjectName={assignedSubjects.find((s) => s.id === selectedSubjectId)?.name}
+                date={selectedDate}
+                period={selectedPeriod}
+                onDraftConfirmed={(draft) => {
+                  setUseCustomLesson(true);
+                  setLessonName(draft.lesson_name);
+                  setContent(draft.content || '');
+                  setNotes(draft.notes || '');
+                }}
+              />
+            )}
 
             <div>
               <div className="flex items-center justify-between mb-2">
