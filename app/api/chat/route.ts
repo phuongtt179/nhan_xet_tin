@@ -4,12 +4,17 @@ import { getGeminiKeys, callGeminiRotate, isDailyLimit } from '@/lib/gemini';
 export const runtime = 'nodejs';
 export const maxDuration = 30;
 
-type PageType = 'attendance' | 'evaluation' | 'equipment_check' | 'teaching_diary';
+type PageType = 'attendance' | 'evaluation' | 'equipment_check' | 'teaching_diary' | 'global';
 
 interface StudentRef {
   id: string;
   name: string;
   computer_name: string | null;
+}
+
+interface GlobalStudentRef extends StudentRef {
+  class_id: string;
+  class_name: string;
 }
 
 interface ChatRequestBody {
@@ -21,16 +26,20 @@ interface ChatRequestBody {
   period?: number;
   criterionName?: string;
   students?: StudentRef[];
+  globalStudents?: GlobalStudentRef[];
 }
 
 interface ChatAction {
-  type: 'attendance' | 'evaluation' | 'equipment_check';
+  type: 'attendance' | 'evaluation' | 'equipment_check' | 'student_note';
   student_id: string;
+  class_id?: string; // global only — server re-derives from roster, never trusts model value
   description: string;
   is_absent?: boolean;
   rating?: number;
+  period?: number; // global only — attendance/equipment_check require it
   forgot_equipment?: boolean;
   note?: string;
+  content?: string; // student_note only
 }
 
 interface DiaryDraft {
@@ -85,6 +94,38 @@ QUY TẮC:
 Chỉ điền field tương ứng với loại hành động đang cho phép, không điền thừa field khác.`;
 }
 
+function buildGlobalSystemPrompt(body: ChatRequestBody): string {
+  const { date, globalStudents = [] } = body;
+
+  const roster = globalStudents
+    .map(
+      (s) =>
+        `- id=${s.id} | lớp "${s.class_name}" (class_id=${s.class_id}) | mã máy "${s.computer_name || '(chưa gán)'}" | tên "${s.name}"`
+    )
+    .join('\n');
+
+  return `Bạn là trợ lý AI cho giáo viên, mở từ icon chat nổi — dùng được ở bất kỳ đâu trong app, KHÔNG có lớp/tiết nào đang chọn sẵn. Giáo viên sẽ nói chuyện tự nhiên, bạn phải tự xác định đúng học sinh (và lớp của em đó) từ danh sách bên dưới.
+
+NGÀY HIỆN TẠI: ${date}
+
+DANH SÁCH TOÀN BỘ HỌC SINH GIÁO VIÊN ĐANG PHỤ TRÁCH (chỉ được chọn student_id có trong danh sách này, không tự bịa; nhiều lớp có thể trùng mã máy như "A3" — PHẢI dựa vào tên hoặc lớp giáo viên nói để chọn đúng người):
+${roster}
+
+BẠN CÓ THỂ ĐỀ XUẤT 3 LOẠI HÀNH ĐỘNG:
+1. "type":"attendance" — điểm danh. Cần "is_absent" (true=vắng, false=có mặt) và "period" (số tiết 1-7). NẾU giáo viên không nói rõ tiết mấy, TUYỆT ĐỐI đừng tự đoán — để "actions" rỗng và "reply" hỏi lại "Tiết mấy ạ?".
+2. "type":"equipment_check" — quên đồ dùng. Cần "forgot_equipment" (true/false), "period" (1-7, bắt buộc như trên — hỏi lại nếu thiếu), và tuỳ chọn "note" (mô tả món đồ quên).
+3. "type":"student_note" — MẶC ĐỊNH dùng loại này cho MỌI nhận xét khác không phải điểm danh/quên đồ: khen, nhắc nhở, nhận xét học tập/thái độ, quan sát hằng ngày... Cần "content" = viết lại câu nhận xét cho gọn, rõ, giữ đúng ý giáo viên nói, giọng văn tự nhiên như lời phê. KHÔNG cần "period".
+
+QUY TẮC:
+- Một câu có thể nhắc nhiều học sinh, mỗi em có thể là 1 action riêng.
+- KHÔNG chắc chắn học sinh nào, hoặc trùng tên/mã máy ở nhiều lớp mà giáo viên không nói rõ lớp nào → để "actions" rỗng, "reply" hỏi lại rõ ràng (ví dụ liệt kê các lớp trùng để giáo viên chọn).
+- Nếu câu không liên quan gì tới học sinh, trả lời ngắn gọn trong "reply", "actions" rỗng.
+- "reply" luôn là 1 câu tiếng Việt ngắn gọn, thân thiện.
+- CHỈ trả về JSON THUẦN, đúng schema sau, KHÔNG thêm chữ nào khác, KHÔNG dùng markdown code fence:
+{"reply":"...","actions":[{"type":"attendance|equipment_check|student_note","student_id":"...","class_id":"...","description":"mô tả ngắn có tên + lớp + hành động","is_absent":true,"period":3,"forgot_equipment":true,"note":"...","content":"..."}]}
+Chỉ điền field tương ứng với loại hành động, không điền thừa field khác. "class_id" luôn điền đúng theo danh sách ở trên, khớp với student_id đã chọn.`;
+}
+
 function buildDiarySystemPrompt(body: ChatRequestBody): string {
   const { className, subjectName, date, period } = body;
   return `Bạn là trợ lý giúp giáo viên soạn nhanh nội dung nhật ký tiết dạy từ mô tả nói tự nhiên.
@@ -118,7 +159,11 @@ export async function POST(request: Request) {
   }
 
   const isDiary = pageType === 'teaching_diary';
-  if (!isDiary && (!Array.isArray(body.students) || body.students.length === 0)) {
+  const isGlobal = pageType === 'global';
+  if (isGlobal && (!Array.isArray(body.globalStudents) || body.globalStudents.length === 0)) {
+    return NextResponse.json({ error: 'no_students' }, { status: 400 });
+  }
+  if (!isDiary && !isGlobal && (!Array.isArray(body.students) || body.students.length === 0)) {
     return NextResponse.json({ error: 'no_students' }, { status: 400 });
   }
 
@@ -127,7 +172,11 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'no_api_key' }, { status: 500 });
   }
 
-  const systemPrompt = isDiary ? buildDiarySystemPrompt(body) : buildActionSystemPrompt(body);
+  const systemPrompt = isDiary
+    ? buildDiarySystemPrompt(body)
+    : isGlobal
+      ? buildGlobalSystemPrompt(body)
+      : buildActionSystemPrompt(body);
 
   const payload = JSON.stringify({
     systemInstruction: { parts: [{ text: systemPrompt }] },
@@ -167,6 +216,17 @@ export async function POST(request: Request) {
 
     const parsed = JSON.parse(cleaned) as { reply?: string; actions?: ChatAction[] };
     const reply = parsed.reply || '';
+
+    if (isGlobal) {
+      const rosterById = new Map((body.globalStudents || []).map((s) => [s.id, s]));
+      const validTypes = new Set(['attendance', 'equipment_check', 'student_note']);
+      const actions = (Array.isArray(parsed.actions) ? parsed.actions : [])
+        .filter((a) => a && rosterById.has(a.student_id) && validTypes.has(a.type))
+        .filter((a) => a.type === 'student_note' || (typeof a.period === 'number' && a.period >= 1 && a.period <= 7))
+        .map((a) => ({ ...a, class_id: rosterById.get(a.student_id)!.class_id }));
+      return NextResponse.json({ reply, actions });
+    }
+
     const validStudentIds = new Set((body.students || []).map((s) => s.id));
     const actions = (Array.isArray(parsed.actions) ? parsed.actions : []).filter(
       (a) => a && validStudentIds.has(a.student_id) && a.type === pageType

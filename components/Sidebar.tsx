@@ -40,16 +40,11 @@ const commonNavItems = [
   { href: '/', icon: Home, label: 'Tổng quan' },
   { href: '/attendance', icon: ClipboardList, label: 'Điểm danh' },
   { href: '/equipment-check', icon: Backpack, label: 'Kiểm tra đồ dùng' },
-  { href: '/evaluations', icon: ClipboardCheck, label: 'Đánh giá' },
   { href: '/teaching-diary', icon: PenLine, label: 'Nhật ký tiết dạy' },
   { href: '/teaching-diary/summary', icon: List, label: 'Tổng hợp nhật ký' },
-  { href: '/topics', icon: FileText, label: 'Quản lý Chủ đề' },
-  { href: '/criteria', icon: CheckSquare, label: 'Quản lý Tiêu chí' },
-  { href: '/topic-summary', icon: BarChart2, label: 'Tổng hợp chủ đề' },
-  { href: '/student-summary', icon: UserCheck, label: 'Tổng hợp học sinh' },
+  { href: '/ai-summary', icon: BarChart2, label: 'Tổng hợp AI' },
   { href: '/attendance-summary', icon: CalendarCheck, label: 'Thống kê buổi học' },
   { href: '/equipment-summary', icon: Package, label: 'Thống kê đồ dùng' },
-  { href: '/semester-summary', icon: GraduationCap, label: 'Tổng hợp cuối kì' },
 ];
 
 // Menu chỉ dành cho Admin
@@ -63,14 +58,20 @@ const adminNavItems = [
   { href: '/year-transition', icon: RefreshCw, label: 'Chuyển năm học' },
   { href: '/students', icon: Users, label: 'Học sinh' },
   { href: '/evaluation-levels', icon: Star, label: 'Mức đánh giá' },
+  { href: '/evaluations', icon: ClipboardCheck, label: 'Đánh giá (cũ)' },
+  { href: '/topics', icon: FileText, label: 'Quản lý Chủ đề (cũ)' },
+  { href: '/criteria', icon: CheckSquare, label: 'Quản lý Tiêu chí (cũ)' },
+  { href: '/topic-summary', icon: BarChart2, label: 'Tổng hợp chủ đề (cũ)' },
+  { href: '/student-summary', icon: UserCheck, label: 'Tổng hợp học sinh (cũ)' },
+  { href: '/semester-summary', icon: GraduationCap, label: 'Tổng hợp cuối kì (cũ)' },
 ];
 
 // Mobile bottom navigation - only show 4 items
 const mobileNavItems = [
   { href: '/', icon: Home, label: 'Tổng quan' },
   { href: '/attendance', icon: ClipboardList, label: 'Điểm danh' },
-  { href: '/evaluations', icon: ClipboardCheck, label: 'Đánh giá' },
   { href: '/equipment-check', icon: Backpack, label: 'Đồ dùng' },
+  { href: '/ai-summary', icon: BarChart2, label: 'Tổng hợp AI' },
 ];
 
 export default function Sidebar() {

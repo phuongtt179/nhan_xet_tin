@@ -220,6 +220,23 @@ export interface Curriculum {
   subjects?: Subject;
 }
 
+// Nhận xét tự do (qua chat AI, không bắt buộc gắn tiêu chí)
+export interface StudentNote {
+  id: string;
+  student_id: string;
+  class_id: string;
+  subject_id: string | null;
+  user_id: string | null;
+  date: string;
+  content: string;
+  category: string | null; // null = nhận xét thường; 'summary_month' | 'summary_semester' = bản tổng hợp AI đã duyệt
+  created_at: string;
+  // Relations
+  students?: Student;
+  classes?: Class;
+  subjects?: Subject;
+}
+
 // Nhật ký tiết dạy
 export interface TeachingDiary {
   id: string;

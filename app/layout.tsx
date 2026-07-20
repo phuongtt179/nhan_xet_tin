@@ -3,6 +3,7 @@ import { Inter } from 'next/font/google'
 import './globals.css'
 import Sidebar from '@/components/Sidebar'
 import Providers from '@/components/Providers'
+import GlobalChatWidget from '@/components/GlobalChatWidget'
 
 const inter = Inter({ subsets: ['latin', 'vietnamese'] })
 
@@ -48,6 +49,7 @@ export default function RootLayout({
               {children}
             </main>
           </div>
+          <GlobalChatWidget />
         </Providers>
       </body>
     </html>
