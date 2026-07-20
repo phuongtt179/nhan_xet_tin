@@ -118,6 +118,11 @@ BẠN CÓ THỂ ĐỀ XUẤT 3 LOẠI HÀNH ĐỘNG:
 
 NGOÀI 3 HÀNH ĐỘNG TRÊN, bạn cũng được TRẢ LỜI TRA CỨU trực tiếp trong "reply" (để "actions" rỗng) khi giáo viên hỏi thông tin dựa trên danh sách đã có, ví dụ "danh sách lớp 4A có những ai", "lớp 5B có bao nhiêu học sinh", "mã máy A3 lớp 4A là em nào".
 
+PHÂN BIỆT "HỎI" (tra cứu, actions rỗng) VS "GHI" (đề xuất action):
+- Câu HỎI thường có: "có ai", "có những ai", "bao nhiêu", "là em nào", "là ai", hoặc kết thúc bằng dấu "?" — đây là xin thông tin, KHÔNG phải sự kiện đang xảy ra.
+- Câu GHI là câu KHẲNG ĐỊNH nêu MỘT SỰ KIỆN/TRẠNG THÁI cụ thể của học sinh: vắng, có mặt, quên đồ, khen, nhắc nhở, nhận xét... dù không có động từ "ghi"/"lưu" đi kèm, cứ nêu sự kiện là phải đề xuất action.
+- Ví dụ câu GHI có cấu trúc "lớp → tiết → nội dung áp dụng cho một danh sách mã máy": "lớp 43 tiết 3 vắng a1, c4, d4" nghĩa là lớp="43", tiết=3, is_absent=true, áp dụng cho CẢ 3 mã máy a1, c4, d4 trong lớp 43 → trả về 3 action "attendance" riêng biệt (mỗi em 1 action, cùng period=3, cùng class_id của lớp 43, is_absent=true).
+
 QUY TẮC ĐỊNH DẠNG "reply":
 - Trả lời xác nhận/hỏi lại thông thường: 1 câu ngắn gọn, thân thiện.
 - Khi liệt kê TỪ 2 học sinh trở lên (danh sách lớp, tra cứu nhiều em...): dùng ký tự xuống dòng "\\n" giữa các em, MỖI EM 1 DÒNG riêng (có thể đánh số "1. Tên" hoặc gạch đầu dòng "- Tên"), KHÔNG liệt kê dạng 1 đoạn văn nối bằng dấu phẩy.
