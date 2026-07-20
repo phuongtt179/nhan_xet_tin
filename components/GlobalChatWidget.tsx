@@ -351,7 +351,7 @@ export default function GlobalChatWidget() {
               }
               return (
                 <div key={m.id} className="flex justify-start">
-                  <div className="bg-gray-100 text-gray-800 rounded-lg px-3 py-2 text-sm max-w-[85%]">{m.text}</div>
+                  <div className="bg-gray-100 text-gray-800 rounded-lg px-3 py-2 text-sm max-w-[85%] whitespace-pre-line">{m.text}</div>
                 </div>
               );
             })}
