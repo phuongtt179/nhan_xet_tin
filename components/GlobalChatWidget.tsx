@@ -63,6 +63,7 @@ interface ChatAction {
   subject_id?: string; // lesson_note only — do AI xác định (nói tên môn khớp, hoặc lớp chỉ có 1 môn)
   subjectOptions?: { id: string; name: string }[]; // lesson_note only, khi giáo viên dạy ≥2 môn ở lớp này
   chosenSubjectId?: string; // lesson_note only — giáo viên chọn khi có subjectOptions
+  chosenPeriod?: number; // attendance/equipment_check only — giáo viên chọn khi audio không nói rõ tiết (mỗi tiết là 1 dòng riêng trong DB nên không thể mặc định ngầm)
 }
 
 interface SummaryResultData {
@@ -537,7 +538,7 @@ export default function GlobalChatWidget() {
       try {
         if (action.type === 'attendance') {
           const isAbsent = !!action.is_absent;
-          await writeAttendance(action.student_id, action.class_id, isAbsent, action.period || 1);
+          await writeAttendance(action.student_id, action.class_id, isAbsent, action.period || action.chosenPeriod || 1);
           results.push(`${label}: đã ghi ${isAbsent ? 'Vắng' : 'Có mặt'} ✅`);
         } else if (action.type === 'equipment_check') {
           await writeEquipmentCheck(
@@ -545,7 +546,7 @@ export default function GlobalChatWidget() {
             action.class_id,
             !!action.forgot_equipment,
             action.note || '',
-            action.period || 1
+            action.period || action.chosenPeriod || 1
           );
           results.push(`${label}: đã ghi ${action.forgot_equipment ? 'quên đồ' : 'mang đủ đồ'} ✅`);
         } else if (action.type === 'student_note') {
@@ -593,6 +594,16 @@ export default function GlobalChatWidget() {
       prev.map((m) => {
         if (m.id !== messageId || !m.actions) return m;
         const actions = m.actions.map((a, i) => (i === actionIndex ? { ...a, chosenSubjectId: subjectId } : a));
+        return { ...m, actions };
+      })
+    );
+  }
+
+  function setActionPeriodChoice(messageId: string, actionIndex: number, period: number) {
+    setMessages((prev) =>
+      prev.map((m) => {
+        if (m.id !== messageId || !m.actions) return m;
+        const actions = m.actions.map((a, i) => (i === actionIndex ? { ...a, chosenPeriod: period } : a));
         return { ...m, actions };
       })
     );
@@ -708,6 +719,23 @@ export default function GlobalChatWidget() {
                                 </option>
                               ))}
                             </select>
+                          )}
+                          {(a.type === 'attendance' || a.type === 'equipment_check') && (
+                            <span className="ml-3 inline-flex items-center gap-1 text-xs text-gray-600">
+                              Tiết:
+                              <select
+                                value={a.period || a.chosenPeriod || 1}
+                                onChange={(e) => setActionPeriodChoice(m.id, i, Number(e.target.value))}
+                                className="px-2 py-1 rounded border border-blue-300 text-xs bg-white"
+                              >
+                                {[1, 2, 3, 4, 5, 6, 7].map((p) => (
+                                  <option key={p} value={p}>
+                                    {p}
+                                  </option>
+                                ))}
+                              </select>
+                              {!a.period && <span className="text-amber-600">(chưa nói rõ, tự chọn nếu sai)</span>}
+                            </span>
                           )}
                         </li>
                       ))}

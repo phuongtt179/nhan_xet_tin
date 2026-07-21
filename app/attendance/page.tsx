@@ -208,14 +208,14 @@ export default function AttendancePage() {
       setSaving(true);
 
       for (const record of attendanceRecords) {
-        // Ràng buộc UNIQUE thật trong DB chỉ là (student_id, class_id, date) — không có period/subject_id,
-        // nên không được lọc thêm 2 field đó khi tìm dòng đã tồn tại (sẽ cố insert trùng và vi phạm ràng buộc).
+        // Ràng buộc UNIQUE thật trong DB là (student_id, class_id, date, period) — mỗi tiết là 1 dòng riêng.
         const { data: existing } = await supabase
           .from('attendance')
           .select('id')
           .eq('student_id', record.studentId)
           .eq('class_id', selectedClassId)
           .eq('date', selectedDate)
+          .eq('period', selectedPeriod)
           .single();
 
         const status = record.isAbsent ? 'absent' : 'present';

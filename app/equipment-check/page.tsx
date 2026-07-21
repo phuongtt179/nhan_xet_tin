@@ -209,13 +209,14 @@ export default function EquipmentCheckPage() {
       setSaving(true);
 
       for (const record of equipmentRecords) {
-        // Ràng buộc UNIQUE thật trong DB chỉ là (student_id, class_id, date) — không có period/subject_id.
+        // Ràng buộc UNIQUE thật trong DB là (student_id, class_id, date, period) — mỗi tiết là 1 dòng riêng.
         const { data: existing } = await supabase
           .from('equipment_checks')
           .select('id')
           .eq('student_id', record.studentId)
           .eq('class_id', selectedClassId)
           .eq('date', selectedDate)
+          .eq('period', selectedPeriod)
           .single();
 
         if (existing) {

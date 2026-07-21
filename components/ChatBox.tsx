@@ -177,14 +177,14 @@ export default function ChatBox({
   }
 
   async function writeAttendance(studentId: string, isAbsent: boolean) {
-    // Ràng buộc UNIQUE thật trong DB chỉ là (student_id, class_id, date) — không có period/subject_id,
-    // nên không được lọc thêm 2 field đó khi tìm dòng đã tồn tại (sẽ cố insert trùng và vi phạm ràng buộc).
+    // Ràng buộc UNIQUE thật trong DB là (student_id, class_id, date, period) — mỗi tiết là 1 dòng riêng.
     const { data: existing } = await supabase
       .from('attendance')
       .select('id')
       .eq('student_id', studentId)
       .eq('class_id', classId)
       .eq('date', date)
+      .eq('period', period)
       .single();
 
     const status = isAbsent ? 'absent' : 'present';
@@ -248,13 +248,14 @@ export default function ChatBox({
   }
 
   async function writeEquipmentCheck(studentId: string, forgotEquipment: boolean, note: string) {
-    // Ràng buộc UNIQUE thật trong DB chỉ là (student_id, class_id, date) — không có period/subject_id.
+    // Ràng buộc UNIQUE thật trong DB là (student_id, class_id, date, period) — mỗi tiết là 1 dòng riêng.
     const { data: existing } = await supabase
       .from('equipment_checks')
       .select('id')
       .eq('student_id', studentId)
       .eq('class_id', classId)
       .eq('date', date)
+      .eq('period', period)
       .single();
 
     if (existing) {
