@@ -209,21 +209,14 @@ export default function EquipmentCheckPage() {
       setSaving(true);
 
       for (const record of equipmentRecords) {
-        // Check if record exists (including subject_id and period)
-        let existingQuery = supabase
+        // Ràng buộc UNIQUE thật trong DB chỉ là (student_id, class_id, date) — không có period/subject_id.
+        const { data: existing } = await supabase
           .from('equipment_checks')
           .select('id')
           .eq('student_id', record.studentId)
           .eq('class_id', selectedClassId)
           .eq('date', selectedDate)
-          .eq('period', selectedPeriod);
-
-        // Include subject_id in the check if selected
-        if (selectedSubjectId) {
-          existingQuery = existingQuery.eq('subject_id', selectedSubjectId);
-        }
-
-        const { data: existing } = await existingQuery.single();
+          .single();
 
         if (existing) {
           // Update
@@ -232,6 +225,8 @@ export default function EquipmentCheckPage() {
             .update({
               forgot_equipment: record.forgotEquipment,
               note: record.note,
+              period: selectedPeriod,
+              subject_id: selectedSubjectId || null,
               user_id: user?.id || null,
             })
             .eq('id', existing.id);

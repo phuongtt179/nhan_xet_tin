@@ -208,21 +208,15 @@ export default function AttendancePage() {
       setSaving(true);
 
       for (const record of attendanceRecords) {
-        // Check if record exists (including subject_id and period)
-        let existingQuery = supabase
+        // Ràng buộc UNIQUE thật trong DB chỉ là (student_id, class_id, date) — không có period/subject_id,
+        // nên không được lọc thêm 2 field đó khi tìm dòng đã tồn tại (sẽ cố insert trùng và vi phạm ràng buộc).
+        const { data: existing } = await supabase
           .from('attendance')
           .select('id')
           .eq('student_id', record.studentId)
           .eq('class_id', selectedClassId)
           .eq('date', selectedDate)
-          .eq('period', selectedPeriod);
-
-        // Include subject_id in the check if selected
-        if (selectedSubjectId) {
-          existingQuery = existingQuery.eq('subject_id', selectedSubjectId);
-        }
-
-        const { data: existing } = await existingQuery.single();
+          .single();
 
         const status = record.isAbsent ? 'absent' : 'present';
 
@@ -233,6 +227,8 @@ export default function AttendancePage() {
             .update({
               status: status,
               note: record.note,
+              period: selectedPeriod,
+              subject_id: selectedSubjectId || null,
               user_id: user?.id || null,
             })
             .eq('id', existing.id);

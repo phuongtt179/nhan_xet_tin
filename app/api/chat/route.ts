@@ -164,6 +164,8 @@ PHÂN BIỆT "HỎI" (tra cứu, actions rỗng) VS "GHI" (đề xuất action):
 - Câu GHI là câu KHẲNG ĐỊNH nêu MỘT SỰ KIỆN/TRẠNG THÁI cụ thể của học sinh: vắng, có mặt, quên đồ, khen, nhắc nhở, nhận xét... dù không có động từ "ghi"/"lưu" đi kèm, cứ nêu sự kiện là phải đề xuất action.
 - Ví dụ câu GHI có cấu trúc "lớp → tiết → nội dung áp dụng cho một danh sách mã máy": "lớp 43 tiết 3 vắng a1, c4, d4" nghĩa là lớp="43", tiết=3, is_absent=true, áp dụng cho CẢ 3 mã máy a1, c4, d4 trong lớp 43 → trả về 3 action "attendance" riêng biệt (mỗi em 1 action, cùng period=3, cùng class_id của lớp 43, is_absent=true).
 
+QUY TẮC BẮT BUỘC KHI ĐÃ XÁC ĐỊNH LỚP: một khi câu (hoặc đoạn ghi âm) đã nêu rõ "lớp X" cho một loạt học sinh, CHỈ được tìm mã máy/tên trong DANH SÁCH HỌC SINH của ĐÚNG lớp X đó — TUYỆT ĐỐI không lấy nhầm học sinh từ lớp khác dù tên/mã máy nghe giống. Nếu 1 tên/mã máy được nhắc không khớp bất kỳ học sinh nào trong đúng lớp X đã nêu, bỏ action đó ra, KHÔNG lấy tạm học sinh trùng tên ở lớp khác thay thế — nêu rõ trong "reply" là không tìm thấy em đó trong lớp X.
+
 QUY TẮC ĐỊNH DẠNG "reply":
 - Trả lời xác nhận/hỏi lại thông thường: 1 câu ngắn gọn, thân thiện.
 - Khi liệt kê TỪ 2 học sinh trở lên (danh sách lớp, tra cứu nhiều em...): dùng ký tự xuống dòng "\\n" giữa các em, MỖI EM 1 DÒNG riêng (có thể đánh số "1. Tên" hoặc gạch đầu dòng "- Tên"), KHÔNG liệt kê dạng 1 đoạn văn nối bằng dấu phẩy.
@@ -183,7 +185,7 @@ QUY TẮC KHÁC:
 - Nếu câu không liên quan gì tới học sinh, trả lời ngắn gọn trong "reply", "actions" rỗng.
 - CHỈ trả về JSON THUẦN, đúng schema sau, KHÔNG thêm chữ nào khác, KHÔNG dùng markdown code fence:
 {"reply":"...","actions":[{"type":"attendance|equipment_check|student_note|lesson_note|request_summary","student_id":"...","class_id":"...","subject_id":"...","description":"mô tả ngắn có tên/lớp + hành động","is_absent":true,"period":3,"forgot_equipment":true,"note":"...","content":"...","lesson_name":"...","lesson_content":"...","start_date":"2026-03-01","end_date":"2026-03-31","period_label":"Tháng 3/2026"}]}
-Chỉ điền field tương ứng với loại hành động, không điền thừa field khác. "class_id" luôn điền đúng theo danh sách lớp/học sinh ở trên. "student_id" chỉ cần cho attendance/equipment_check/student_note/request_summary — với "lesson_note" để "student_id":"".${
+Chỉ điền field tương ứng với loại hành động, không điền thừa field khác. "class_id" luôn điền đúng theo danh sách lớp/học sinh ở trên. "student_id" chỉ cần cho attendance/equipment_check/student_note/request_summary — với "lesson_note" để "student_id":"". "description" LÀ FIELD BẮT BUỘC cho MỌI action, KHÔNG BAO GIỜ được để trống — luôn viết 1 câu ngắn nêu rõ tên học sinh (hoặc tên lớp với lesson_note) + lớp + hành động cụ thể, ví dụ "Trần Thanh Nghĩa (Lớp 43) → Vắng tiết 3".${
     isAudio
       ? `
 

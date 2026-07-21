@@ -55,6 +55,21 @@ interface ChatBoxProps {
   onDraftConfirmed?: (draft: DiaryDraft) => void;
 }
 
+function actionDescription(students: StudentRef[], a: ChatAction): string {
+  if (a.description && a.description.trim()) return a.description;
+  const who = studentLabel(students, a.student_id);
+  switch (a.type) {
+    case 'attendance':
+      return `${who} → ${a.is_absent ? 'Vắng' : 'Có mặt'}`;
+    case 'equipment_check':
+      return `${who} → ${a.forgot_equipment ? 'Quên đồ dùng' : 'Đủ đồ dùng'}`;
+    case 'evaluation':
+      return `${who} → Đánh giá: ${a.rating ?? ''}`;
+    default:
+      return who;
+  }
+}
+
 function studentLabel(students: StudentRef[], studentId: string): string {
   const s = students.find((s) => s.id === studentId);
   return s ? `${s.computer_name || '?'} (${s.name})` : `#${studentId}`;
@@ -162,22 +177,22 @@ export default function ChatBox({
   }
 
   async function writeAttendance(studentId: string, isAbsent: boolean) {
-    let existingQuery = supabase
+    // Ràng buộc UNIQUE thật trong DB chỉ là (student_id, class_id, date) — không có period/subject_id,
+    // nên không được lọc thêm 2 field đó khi tìm dòng đã tồn tại (sẽ cố insert trùng và vi phạm ràng buộc).
+    const { data: existing } = await supabase
       .from('attendance')
       .select('id')
       .eq('student_id', studentId)
       .eq('class_id', classId)
       .eq('date', date)
-      .eq('period', period);
-    if (subjectId) existingQuery = existingQuery.eq('subject_id', subjectId);
-    const { data: existing } = await existingQuery.single();
+      .single();
 
     const status = isAbsent ? 'absent' : 'present';
 
     if (existing) {
       const { error } = await supabase
         .from('attendance')
-        .update({ status, user_id: user?.id || null })
+        .update({ status, period, subject_id: subjectId || null, user_id: user?.id || null })
         .eq('id', existing.id);
       if (error) throw error;
     } else {
@@ -233,20 +248,19 @@ export default function ChatBox({
   }
 
   async function writeEquipmentCheck(studentId: string, forgotEquipment: boolean, note: string) {
-    let existingQuery = supabase
+    // Ràng buộc UNIQUE thật trong DB chỉ là (student_id, class_id, date) — không có period/subject_id.
+    const { data: existing } = await supabase
       .from('equipment_checks')
       .select('id')
       .eq('student_id', studentId)
       .eq('class_id', classId)
       .eq('date', date)
-      .eq('period', period);
-    if (subjectId) existingQuery = existingQuery.eq('subject_id', subjectId);
-    const { data: existing } = await existingQuery.single();
+      .single();
 
     if (existing) {
       const { error } = await supabase
         .from('equipment_checks')
-        .update({ forgot_equipment: forgotEquipment, note: note || null, user_id: user?.id || null })
+        .update({ forgot_equipment: forgotEquipment, note: note || null, period, subject_id: subjectId || null, user_id: user?.id || null })
         .eq('id', existing.id);
       if (error) throw error;
     } else {
@@ -352,7 +366,7 @@ export default function ChatBox({
                 {m.text && <div>{m.text}</div>}
                 <ul className="list-disc list-inside space-y-1">
                   {m.actions?.map((a, i) => (
-                    <li key={i}>{a.description}</li>
+                    <li key={i}>{actionDescription(students || [], a)}</li>
                   ))}
                 </ul>
                 {!m.resolved && (

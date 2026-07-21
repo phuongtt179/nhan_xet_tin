@@ -94,6 +94,25 @@ function studentLabel(roster: GlobalStudent[], studentId: string): string {
   return s ? `${s.name} (${s.class_name})` : `#${studentId}`;
 }
 
+function actionDescription(roster: GlobalStudent[], a: ChatAction): string {
+  if (a.description && a.description.trim()) return a.description;
+  const who = a.student_id ? studentLabel(roster, a.student_id) : (roster.find((s) => s.class_id === a.class_id)?.class_name || 'Lớp');
+  switch (a.type) {
+    case 'attendance':
+      return `${who} → ${a.is_absent ? 'Vắng' : 'Có mặt'}${a.period ? ` tiết ${a.period}` : ''}`;
+    case 'equipment_check':
+      return `${who} → ${a.forgot_equipment ? 'Quên đồ dùng' : 'Đủ đồ dùng'}${a.period ? ` tiết ${a.period}` : ''}`;
+    case 'student_note':
+      return `${who} → Nhận xét: ${a.content || a.note || ''}`;
+    case 'lesson_note':
+      return `${who} → Ghi bài học: ${a.lesson_name || ''}`;
+    case 'request_summary':
+      return `${who} → Tổng hợp từ ${a.start_date || ''} đến ${a.end_date || ''}`;
+    default:
+      return who;
+  }
+}
+
 let idCounter = 0;
 function nextId(): string {
   idCounter += 1;
@@ -311,13 +330,15 @@ export default function GlobalChatWidget() {
   }
 
   async function writeAttendance(studentId: string, classId: string, isAbsent: boolean, period: number) {
+    // Ràng buộc UNIQUE thật trong DB chỉ là (student_id, class_id, date) — KHÔNG có period/subject_id,
+    // nghĩa là mỗi học sinh chỉ có 1 dòng điểm danh/ngày cho lớp đó. Không được lọc thêm theo period khi
+    // tìm dòng đã tồn tại, nếu không sẽ cố insert trùng và vi phạm ràng buộc.
     const { data: existing } = await supabase
       .from('attendance')
       .select('id')
       .eq('student_id', studentId)
       .eq('class_id', classId)
       .eq('date', format(new Date(), 'yyyy-MM-dd'))
-      .eq('period', period)
       .single();
 
     const status = isAbsent ? 'absent' : 'present';
@@ -325,7 +346,7 @@ export default function GlobalChatWidget() {
     if (existing) {
       const { error } = await supabase
         .from('attendance')
-        .update({ status, user_id: user?.id || null })
+        .update({ status, period, user_id: user?.id || null })
         .eq('id', existing.id);
       if (error) throw error;
     } else {
@@ -352,19 +373,19 @@ export default function GlobalChatWidget() {
     note: string,
     period: number
   ) {
+    // Ràng buộc UNIQUE thật trong DB chỉ là (student_id, class_id, date) — không có period/subject_id.
     const { data: existing } = await supabase
       .from('equipment_checks')
       .select('id')
       .eq('student_id', studentId)
       .eq('class_id', classId)
       .eq('date', format(new Date(), 'yyyy-MM-dd'))
-      .eq('period', period)
       .single();
 
     if (existing) {
       const { error } = await supabase
         .from('equipment_checks')
-        .update({ forgot_equipment: forgotEquipment, note: note || null, user_id: user?.id || null })
+        .update({ forgot_equipment: forgotEquipment, note: note || null, period, user_id: user?.id || null })
         .eq('id', existing.id);
       if (error) throw error;
     } else {
@@ -672,7 +693,7 @@ export default function GlobalChatWidget() {
                         <li key={i} className="space-y-1">
                           <div className="flex items-start gap-1">
                             <span>•</span>
-                            <span>{a.description}</span>
+                            <span>{actionDescription(roster, a)}</span>
                           </div>
                           {a.subjectOptions && (
                             <select
