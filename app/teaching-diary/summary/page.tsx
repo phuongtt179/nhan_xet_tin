@@ -9,9 +9,12 @@ import { format } from 'date-fns';
 import { vi } from 'date-fns/locale';
 
 interface GroupedDiary {
-  week: number;
+  key: string;
+  label: string;
   entries: TeachingDiary[];
 }
+
+type ViewMode = 'time' | 'class';
 
 export default function TeachingDiarySummaryPage() {
   const { user, isAdmin, getAssignedSubjects } = useAuth();
@@ -27,9 +30,12 @@ export default function TeachingDiarySummaryPage() {
   const [weekFrom, setWeekFrom] = useState<number>(1);
   const [weekTo, setWeekTo] = useState<number>(35);
 
-  // Grouped data by week
-  const [groupedData, setGroupedData] = useState<GroupedDiary[]>([]);
-  const [expandedWeeks, setExpandedWeeks] = useState<Set<number>>(new Set());
+  // Xem theo thời gian (nhóm theo tuần, sắp theo tiết) hoặc theo lớp (nhóm theo lớp, sắp theo ngày)
+  const [viewMode, setViewMode] = useState<ViewMode>('time');
+
+  // Dữ liệu thô — nhóm lại theo viewMode khi render, không cần refetch khi đổi chế độ xem
+  const [allEntries, setAllEntries] = useState<TeachingDiary[]>([]);
+  const [expandedKeys, setExpandedKeys] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     loadSchoolYears();
@@ -115,26 +121,7 @@ export default function TeachingDiarySummaryPage() {
 
       if (error) throw error;
 
-      // Group by week
-      const grouped: Map<number, TeachingDiary[]> = new Map();
-      (data || []).forEach((entry) => {
-        const week = entry.week_number;
-        if (!grouped.has(week)) {
-          grouped.set(week, []);
-        }
-        grouped.get(week)!.push(entry);
-      });
-
-      // Convert to array
-      const result: GroupedDiary[] = [];
-      grouped.forEach((entries, week) => {
-        result.push({ week, entries });
-      });
-
-      setGroupedData(result);
-
-      // Expand all weeks by default
-      setExpandedWeeks(new Set(result.map(g => g.week)));
+      setAllEntries(data || []);
     } catch (error) {
       console.error('Error loading diary entries:', error);
     } finally {
@@ -142,27 +129,69 @@ export default function TeachingDiarySummaryPage() {
     }
   }
 
-  function toggleWeek(week: number) {
-    setExpandedWeeks(prev => {
+  // Nhóm theo tuần (đã sắp theo ngày → tiết từ câu query) — "Xem theo thời gian"
+  function groupByWeek(entries: TeachingDiary[]): GroupedDiary[] {
+    const grouped: Map<number, TeachingDiary[]> = new Map();
+    entries.forEach((entry) => {
+      const week = entry.week_number;
+      if (!grouped.has(week)) grouped.set(week, []);
+      grouped.get(week)!.push(entry);
+    });
+    return Array.from(grouped, ([week, items]) => ({
+      key: `week-${week}`,
+      label: `Tuần ${week}`,
+      entries: items,
+    })).sort((a, b) => a.entries[0].week_number - b.entries[0].week_number);
+  }
+
+  // Nhóm theo lớp, mỗi lớp sắp theo ngày tăng dần — "Xem theo lớp"
+  function groupByClass(entries: TeachingDiary[]): GroupedDiary[] {
+    const grouped: Map<string, TeachingDiary[]> = new Map();
+    entries.forEach((entry) => {
+      const classId = entry.class_id;
+      if (!grouped.has(classId)) grouped.set(classId, []);
+      grouped.get(classId)!.push(entry);
+    });
+    const result = Array.from(grouped, ([classId, items]) => {
+      const sorted = [...items].sort(
+        (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime() || a.period - b.period
+      );
+      const classInfo = (sorted[0] as any).classes;
+      const label = classInfo ? `${classInfo.grades?.name || ''} - ${classInfo.name}` : classId;
+      return { key: `class-${classId}`, label, entries: sorted };
+    });
+    return result.sort((a, b) => a.label.localeCompare(b.label));
+  }
+
+  const groupedData: GroupedDiary[] = viewMode === 'time' ? groupByWeek(allEntries) : groupByClass(allEntries);
+
+  useEffect(() => {
+    // Mở tất cả nhóm mặc định mỗi khi đổi chế độ xem hoặc tải lại dữ liệu
+    setExpandedKeys(new Set(groupedData.map((g) => g.key)));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allEntries, viewMode]);
+
+  function toggleGroup(key: string) {
+    setExpandedKeys(prev => {
       const next = new Set(prev);
-      if (next.has(week)) {
-        next.delete(week);
+      if (next.has(key)) {
+        next.delete(key);
       } else {
-        next.add(week);
+        next.add(key);
       }
       return next;
     });
   }
 
   function expandAll() {
-    setExpandedWeeks(new Set(groupedData.map(g => g.week)));
+    setExpandedKeys(new Set(groupedData.map(g => g.key)));
   }
 
   function collapseAll() {
-    setExpandedWeeks(new Set());
+    setExpandedKeys(new Set());
   }
 
-  const totalEntries = groupedData.reduce((sum, g) => sum + g.entries.length, 0);
+  const totalEntries = allEntries.length;
 
   return (
     <div className="p-4 lg:p-8">
@@ -179,6 +208,24 @@ export default function TeachingDiarySummaryPage() {
         <div className="flex items-center gap-2 mb-4">
           <Filter size={20} className="text-gray-500" />
           <h2 className="font-semibold text-gray-800">Bộ lọc</h2>
+        </div>
+
+        <div className="mb-4">
+          <label className="block text-sm font-semibold text-gray-700 mb-2">Cách xem</label>
+          <div className="flex gap-2">
+            <button
+              onClick={() => setViewMode('time')}
+              className={`flex-1 lg:flex-none lg:px-6 px-4 py-2 rounded-lg border-2 text-sm font-medium ${viewMode === 'time' ? 'bg-purple-600 text-white border-purple-600' : 'bg-white border-gray-300 text-gray-700'}`}
+            >
+              Theo thời gian (tuần)
+            </button>
+            <button
+              onClick={() => setViewMode('class')}
+              className={`flex-1 lg:flex-none lg:px-6 px-4 py-2 rounded-lg border-2 text-sm font-medium ${viewMode === 'class' ? 'bg-purple-600 text-white border-purple-600' : 'bg-white border-gray-300 text-gray-700'}`}
+            >
+              Theo lớp
+            </button>
+          </div>
         </div>
 
         <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
@@ -263,7 +310,9 @@ export default function TeachingDiarySummaryPage() {
             <span className="ml-2 text-2xl font-bold text-purple-800">{totalEntries}</span>
           </div>
           <div>
-            <span className="text-sm text-purple-600 font-medium">Số tuần có dữ liệu:</span>
+            <span className="text-sm text-purple-600 font-medium">
+              {viewMode === 'time' ? 'Số tuần có dữ liệu:' : 'Số lớp có dữ liệu:'}
+            </span>
             <span className="ml-2 text-2xl font-bold text-purple-800">{groupedData.length}</span>
           </div>
         </div>
@@ -286,28 +335,28 @@ export default function TeachingDiarySummaryPage() {
         </div>
       ) : (
         <div className="space-y-4">
-          {groupedData.map(({ week, entries }) => (
-            <div key={week} className="bg-white rounded-lg shadow overflow-hidden">
-              {/* Week header */}
+          {groupedData.map(({ key, label, entries }) => (
+            <div key={key} className="bg-white rounded-lg shadow overflow-hidden">
+              {/* Group header */}
               <div
-                onClick={() => toggleWeek(week)}
+                onClick={() => toggleGroup(key)}
                 className="flex items-center justify-between p-4 bg-gradient-to-r from-purple-500 to-purple-600 text-white cursor-pointer hover:from-purple-600 hover:to-purple-700 transition-colors"
               >
                 <div className="flex items-center gap-3">
-                  {expandedWeeks.has(week) ? (
+                  {expandedKeys.has(key) ? (
                     <ChevronDown size={24} />
                   ) : (
                     <ChevronRight size={24} />
                   )}
-                  <span className="text-lg font-bold">Tuần {week}</span>
+                  <span className="text-lg font-bold">{label}</span>
                   <span className="px-2 py-1 bg-white/20 rounded text-sm">
                     {entries.length} tiết
                   </span>
                 </div>
               </div>
 
-              {/* Week content */}
-              {expandedWeeks.has(week) && (
+              {/* Group content */}
+              {expandedKeys.has(key) && (
                 <div className="divide-y divide-gray-200">
                   {entries.map((entry) => (
                     <div key={entry.id} className="p-4 hover:bg-gray-50">
@@ -324,11 +373,16 @@ export default function TeachingDiarySummaryPage() {
                           </span>
                         </div>
                         <div className="flex-1">
-                          <div className="flex items-center gap-2 mb-1">
-                            <span className="text-sm text-blue-600 font-medium">
-                              {(entry as any).classes?.grades?.name} - {(entry as any).classes?.name}
-                            </span>
-                          </div>
+                          {viewMode === 'time' && (
+                            <div className="flex items-center gap-2 mb-1">
+                              <span className="text-sm text-blue-600 font-medium">
+                                {(entry as any).classes?.grades?.name} - {(entry as any).classes?.name}
+                              </span>
+                            </div>
+                          )}
+                          {viewMode === 'class' && (
+                            <div className="text-xs text-gray-400 mb-1">Tuần {entry.week_number}</div>
+                          )}
                           <h3 className="font-semibold text-gray-800">{entry.lesson_name}</h3>
                           {entry.content && (
                             <p className="text-gray-600 text-sm mt-1 whitespace-pre-line">{entry.content}</p>
