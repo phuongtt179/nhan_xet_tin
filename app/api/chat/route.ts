@@ -17,6 +17,11 @@ interface GlobalStudentRef extends StudentRef {
   class_name: string;
 }
 
+interface ClassSubjects {
+  class_id: string;
+  subjects: { id: string; name: string }[];
+}
+
 interface ChatRequestBody {
   message: string;
   pageType: PageType;
@@ -27,6 +32,7 @@ interface ChatRequestBody {
   criterionName?: string;
   students?: StudentRef[];
   globalStudents?: GlobalStudentRef[];
+  classSubjects?: ClassSubjects[]; // global only — môn giáo viên được phân công theo từng lớp
 }
 
 interface ChatAction {
@@ -45,6 +51,7 @@ interface ChatAction {
   period_label?: string; // request_summary only, human label e.g. "Tháng 3/2026"
   lesson_name?: string; // lesson_note only
   lesson_content?: string; // lesson_note only, optional detail
+  subject_id?: string; // lesson_note only — chỉ điền khi xác định được rõ ràng (nói tên môn khớp, hoặc lớp chỉ có 1 môn)
 }
 
 interface DiaryDraft {
@@ -100,7 +107,7 @@ Chỉ điền field tương ứng với loại hành động đang cho phép, kh
 }
 
 function buildGlobalSystemPrompt(body: ChatRequestBody): string {
-  const { date, globalStudents = [] } = body;
+  const { date, globalStudents = [], classSubjects = [] } = body;
 
   const roster = globalStudents
     .map(
@@ -113,6 +120,16 @@ function buildGlobalSystemPrompt(body: ChatRequestBody): string {
   globalStudents.forEach((s) => classMap.set(s.class_id, s.class_name));
   const classesText = Array.from(classMap, ([id, name]) => `- lớp "${name}" (class_id=${id})`).join('\n');
 
+  const subjectsByClassText = classSubjects
+    .filter((c) => c.subjects.length > 0)
+    .map(
+      (c) =>
+        `- lớp "${classMap.get(c.class_id) || c.class_id}" (class_id=${c.class_id}): ${c.subjects
+          .map((s) => `"${s.name}" (subject_id=${s.id})`)
+          .join(', ')}`
+    )
+    .join('\n');
+
   return `Bạn là trợ lý AI cho giáo viên, mở từ icon chat nổi — dùng được ở bất kỳ đâu trong app, KHÔNG có lớp/tiết nào đang chọn sẵn. Giáo viên sẽ nói chuyện tự nhiên, bạn phải tự xác định đúng học sinh/lớp từ danh sách bên dưới.
 
 NGÀY HIỆN TẠI: ${date}
@@ -123,11 +140,19 @@ ${classesText}
 DANH SÁCH TOÀN BỘ HỌC SINH (chỉ được chọn student_id có trong danh sách này, không tự bịa; nhiều lớp có thể trùng mã máy như "A3" — PHẢI dựa vào tên hoặc lớp giáo viên nói để chọn đúng người):
 ${roster}
 
+MÔN HỌC GIÁO VIÊN ĐƯỢC PHÂN CÔNG THEO TỪNG LỚP (dùng riêng cho "lesson_note" bên dưới):
+${subjectsByClassText || '(không có dữ liệu phân công môn)'}
+
 BẠN CÓ THỂ ĐỀ XUẤT 5 LOẠI HÀNH ĐỘNG:
 1. "type":"attendance" — điểm danh. Cần "student_id", "is_absent" (true=vắng, false=có mặt) và "period" (số tiết 1-7). NẾU giáo viên không nói rõ tiết mấy, TUYỆT ĐỐI đừng tự đoán — để "actions" rỗng và "reply" hỏi lại "Tiết mấy ạ?".
 2. "type":"equipment_check" — quên đồ dùng. Cần "student_id", "forgot_equipment" (true/false), "period" (1-7, bắt buộc như trên — hỏi lại nếu thiếu), và tuỳ chọn "note" (mô tả món đồ quên).
 3. "type":"student_note" — MẶC ĐỊNH dùng loại này cho MỌI nhận xét khác không phải điểm danh/quên đồ, GẮN VỚI 1 HỌC SINH cụ thể: khen, nhắc nhở, nhận xét học tập/thái độ, quan sát hằng ngày... Cần "student_id" và "content" = viết lại câu nhận xét cho gọn, rõ, giữ đúng ý giáo viên nói, giọng văn tự nhiên như lời phê. KHÔNG cần "period".
 4. "type":"lesson_note" — lưu tên bài học đã dạy cho CẢ LỚP (không phải cho 1 học sinh). Cần "class_id" (chọn đúng theo danh sách lớp ở trên), "period" (1-7, hỏi lại nếu thiếu), "lesson_name" (tên bài học ngắn gọn, suy ra từ câu giáo viên nói) và tuỳ chọn "lesson_content" (mô tả thêm nếu giáo viên có nói chi tiết). Dùng khi giáo viên nói kiểu "lớp X tiết Y dạy bài...", "hôm nay dạy...". KHÔNG cần "student_id" (bỏ trống "").
+   XÁC ĐỊNH "subject_id" cho lesson_note theo thứ tự ưu tiên:
+   a. Nếu giáo viên NÓI RÕ TÊN MÔN trong câu (ví dụ "môn Tin học dạy bài...") → đối chiếu với danh sách môn của đúng lớp đó ở trên. Nếu khớp tên (không cần khớp tuyệt đối, gần đúng là được, ví dụ "Tin" khớp "Tin học") → điền "subject_id" đó, lưu luôn, KHÔNG cần hỏi lại. Nếu KHÔNG khớp môn nào trong danh sách của lớp đó → để "actions" rỗng, "reply" hỏi lại và liệt kê đúng các môn giáo viên được phân công ở lớp đó.
+   b. Nếu giáo viên KHÔNG nói tên môn: lớp đó chỉ có ĐÚNG 1 môn trong danh sách → tự động điền "subject_id" của môn đó, không cần hỏi.
+   c. Nếu giáo viên KHÔNG nói tên môn VÀ lớp đó có TỪ 2 MÔN trở lên → để "actions" rỗng, "reply" hỏi lại "Môn nào ạ?" kèm liệt kê tên các môn của lớp đó.
+   d. Nếu lớp đó không có trong danh sách môn (không có dữ liệu phân công) → bỏ trống "subject_id", hệ thống sẽ tự xử lý.
 5. "type":"request_summary" — giáo viên muốn AI TỔNG HỢP/TỔNG KẾT/XẾP LOẠI 1 học sinh theo 1 khoảng thời gian (ví dụ "tổng hợp nhận xét em A1 lớp 43 tháng 3", "xuất báo cáo em Long tháng trước", "tổng kết em Hoa từ 1/9 đến 31/12"). Cần "student_id", "start_date" và "end_date" (định dạng YYYY-MM-DD — dựa vào NGÀY HIỆN TẠI để suy ra đúng tháng/năm nếu giáo viên chỉ nói tên tháng, ví dụ "tháng 3" khi hiện tại đang là năm 2026 → start_date="2026-03-01", end_date="2026-03-31"), và "period_label" (nhãn hiển thị, ví dụ "Tháng 3/2026"). Đây KHÔNG phải hành động ghi dữ liệu — chỉ là yêu cầu tạo báo cáo, hệ thống sẽ tự chạy AI tổng hợp sau khi giáo viên bấm OK. Nếu giáo viên nói mơ hồ không rõ mốc ngày (ví dụ chỉ nói "học kỳ 1" mà không nói rõ từ ngày nào đến ngày nào), để "actions" rỗng và hỏi lại xin khoảng ngày cụ thể.
 
 NGOÀI 5 HÀNH ĐỘNG TRÊN, bạn cũng được TRẢ LỜI TRA CỨU trực tiếp trong "reply" (để "actions" rỗng) khi giáo viên hỏi thông tin dựa trên danh sách đã có, ví dụ "danh sách lớp 4A có những ai", "lớp 5B có bao nhiêu học sinh", "mã máy A3 lớp 4A là em nào".
@@ -149,7 +174,7 @@ QUY TẮC KHÁC:
 - KHÔNG chắc chắn học sinh nào, hoặc trùng tên/mã máy ở nhiều lớp mà giáo viên không nói rõ lớp nào → để "actions" rỗng, "reply" hỏi lại rõ ràng (ví dụ liệt kê các lớp trùng để giáo viên chọn).
 - Nếu câu không liên quan gì tới học sinh, trả lời ngắn gọn trong "reply", "actions" rỗng.
 - CHỈ trả về JSON THUẦN, đúng schema sau, KHÔNG thêm chữ nào khác, KHÔNG dùng markdown code fence:
-{"reply":"...","actions":[{"type":"attendance|equipment_check|student_note|lesson_note|request_summary","student_id":"...","class_id":"...","description":"mô tả ngắn có tên/lớp + hành động","is_absent":true,"period":3,"forgot_equipment":true,"note":"...","content":"...","lesson_name":"...","lesson_content":"...","start_date":"2026-03-01","end_date":"2026-03-31","period_label":"Tháng 3/2026"}]}
+{"reply":"...","actions":[{"type":"attendance|equipment_check|student_note|lesson_note|request_summary","student_id":"...","class_id":"...","subject_id":"...","description":"mô tả ngắn có tên/lớp + hành động","is_absent":true,"period":3,"forgot_equipment":true,"note":"...","content":"...","lesson_name":"...","lesson_content":"...","start_date":"2026-03-01","end_date":"2026-03-31","period_label":"Tháng 3/2026"}]}
 Chỉ điền field tương ứng với loại hành động, không điền thừa field khác. "class_id" luôn điền đúng theo danh sách lớp/học sinh ở trên. "student_id" chỉ cần cho attendance/equipment_check/student_note/request_summary — với "lesson_note" để "student_id":"".`;
 }
 
@@ -247,6 +272,9 @@ export async function POST(request: Request) {
     if (isGlobal) {
       const rosterById = new Map((body.globalStudents || []).map((s) => [s.id, s]));
       const classIds = new Set((body.globalStudents || []).map((s) => s.class_id));
+      const subjectIdsByClass = new Map(
+        (body.classSubjects || []).map((c) => [c.class_id, new Set(c.subjects.map((s) => s.id))])
+      );
       const isValidPeriod = (p: unknown) => typeof p === 'number' && p >= 1 && p <= 7;
       const isValidDate = (d: unknown) => typeof d === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d);
 
@@ -268,7 +296,14 @@ export async function POST(request: Request) {
           return false;
         })
         .map((a) => {
-          if (a.type === 'lesson_note') return a; // class_id already provided directly by the model
+          if (a.type === 'lesson_note') {
+            // class_id already provided directly by the model; only keep subject_id if it truly
+            // belongs to that class's assigned subjects — otherwise drop it and let the client
+            // fall back (single-subject auto-fill or, if still ambiguous, ask the teacher).
+            const validSubjectIds = subjectIdsByClass.get(a.class_id!);
+            const subjectId = a.subject_id && validSubjectIds?.has(a.subject_id) ? a.subject_id : undefined;
+            return { ...a, subject_id: subjectId };
+          }
           const student = rosterById.get(a.student_id);
           return student ? { ...a, class_id: student.class_id } : a;
         });

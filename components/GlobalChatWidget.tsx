@@ -36,6 +36,9 @@ interface ChatAction {
   start_date?: string;
   end_date?: string;
   period_label?: string;
+  subject_id?: string; // lesson_note only — do AI xác định (nói tên môn khớp, hoặc lớp chỉ có 1 môn)
+  subjectOptions?: { id: string; name: string }[]; // lesson_note only, khi giáo viên dạy ≥2 môn ở lớp này
+  chosenSubjectId?: string; // lesson_note only — giáo viên chọn khi có subjectOptions
 }
 
 interface SummaryResultData {
@@ -144,6 +147,12 @@ export default function GlobalChatWidget() {
     setSending(true);
 
     try {
+      const classIds = Array.from(new Set(roster.map((s) => s.class_id)));
+      const classSubjects = classIds.map((classId) => ({
+        class_id: classId,
+        subjects: getMySubjectsForClass(classId),
+      }));
+
       const res = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -152,6 +161,7 @@ export default function GlobalChatWidget() {
           pageType: 'global',
           date: format(new Date(), 'yyyy-MM-dd'),
           globalStudents: roster,
+          classSubjects,
         }),
       });
 
@@ -166,7 +176,15 @@ export default function GlobalChatWidget() {
         return;
       }
 
-      const actions: ChatAction[] = Array.isArray(data.actions) ? data.actions : [];
+      // Safety net: nếu server không xác định được subject_id cho lesson_note mà lớp có ≥2 môn,
+      // đính kèm lựa chọn để giáo viên chọn tay trước khi bấm OK (bình thường AI đã tự hỏi lại rồi).
+      const actions: ChatAction[] = (Array.isArray(data.actions) ? data.actions : []).map((a: ChatAction) => {
+        if (a.type === 'lesson_note' && !a.subject_id) {
+          const options = getMySubjectsForClass(a.class_id);
+          if (options.length > 1) return { ...a, subjectOptions: options };
+        }
+        return a;
+      });
       if (actions.length > 0) {
         appendMessage({ id: nextId(), kind: 'ai-action-proposal', text: data.reply || '', actions, resolved: false });
       } else {
@@ -267,12 +285,50 @@ export default function GlobalChatWidget() {
     if (error) throw error;
   }
 
-  async function writeLessonNote(classId: string, period: number, lessonName: string, lessonContent: string) {
+  // Các môn giáo viên hiện tại được phân công dạy ở 1 lớp (không trùng lặp)
+  function getMySubjectsForClass(classId: string): { id: string; name: string }[] {
+    const map = new Map<string, string>();
+    assignments.forEach((a) => {
+      if (a.class_id === classId && a.subject_id && a.subjects) map.set(a.subject_id, a.subjects.name);
+    });
+    return Array.from(map, ([id, name]) => ({ id, name }));
+  }
+
+  async function resolveSubjectIdForClass(classId: string): Promise<string | null> {
+    // 1. Ưu tiên môn giáo viên hiện tại được phân công dạy ở lớp này (nếu chỉ dạy đúng 1 môn)
+    const mySubjects = getMySubjectsForClass(classId);
+    if (mySubjects.length >= 1) return mySubjects[0].id;
+
+    // 2. Không tìm thấy (vd. admin, hoặc chưa có phân công) — lấy tạm môn bất kỳ đã gán cho lớp này
+    const { data: anyAssignment } = await supabase
+      .from('teacher_assignments')
+      .select('subject_id')
+      .eq('class_id', classId)
+      .not('subject_id', 'is', null)
+      .limit(1)
+      .single();
+    if (anyAssignment?.subject_id) return anyAssignment.subject_id;
+
+    // 3. Vẫn không có — lấy môn học đang hoạt động đầu tiên trong hệ thống (chỉ để thoả ràng buộc NOT NULL)
+    const { data: anySubject } = await supabase.from('subjects').select('id').eq('is_active', true).limit(1).single();
+    return anySubject?.id || null;
+  }
+
+  async function writeLessonNote(
+    classId: string,
+    period: number,
+    lessonName: string,
+    lessonContent: string,
+    preferredSubjectId?: string
+  ) {
     const today = format(new Date(), 'yyyy-MM-dd');
+    const subjectId = preferredSubjectId || (await resolveSubjectIdForClass(classId));
+
     const { data: existing } = await supabase
       .from('teaching_diary')
       .select('id')
       .eq('class_id', classId)
+      .eq('subject_id', subjectId)
       .eq('date', today)
       .eq('period', period)
       .single();
@@ -288,7 +344,7 @@ export default function GlobalChatWidget() {
         {
           user_id: user?.id || null,
           class_id: classId,
-          subject_id: null,
+          subject_id: subjectId,
           date: today,
           period,
           week_number: getSchoolWeek(new Date()),
@@ -363,7 +419,14 @@ export default function GlobalChatWidget() {
           results.push(`${label}: đã lưu nhận xét ✅`);
         } else if (action.type === 'lesson_note') {
           const className = roster.find((s) => s.class_id === action.class_id)?.class_name || action.class_id;
-          await writeLessonNote(action.class_id, action.period || 1, action.lesson_name || '', action.lesson_content || '');
+          const preferredSubjectId = action.subject_id || action.chosenSubjectId;
+          await writeLessonNote(
+            action.class_id,
+            action.period || 1,
+            action.lesson_name || '',
+            action.lesson_content || '',
+            preferredSubjectId
+          );
           results.push(`Lớp ${className}: đã lưu tên bài học "${action.lesson_name}" ✅`);
         } else if (action.type === 'request_summary') {
           const summary = await generateSummary(action);
@@ -389,6 +452,16 @@ export default function GlobalChatWidget() {
     }
 
     appendMessage({ id: nextId(), kind: 'system', text: results.join('\n') });
+  }
+
+  function setActionSubjectChoice(messageId: string, actionIndex: number, subjectId: string) {
+    setMessages((prev) =>
+      prev.map((m) => {
+        if (m.id !== messageId || !m.actions) return m;
+        const actions = m.actions.map((a, i) => (i === actionIndex ? { ...a, chosenSubjectId: subjectId } : a));
+        return { ...m, actions };
+      })
+    );
   }
 
   function handleCancel(messageId: string) {
@@ -474,19 +547,40 @@ export default function GlobalChatWidget() {
                 );
               }
               if (m.kind === 'ai-action-proposal') {
+                const needsSubjectChoice = (m.actions || []).some((a) => a.subjectOptions && !a.chosenSubjectId);
                 return (
                   <div key={m.id} className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm space-y-2">
                     {m.text && <div>{m.text}</div>}
-                    <ul className="list-disc list-inside space-y-1">
+                    <ul className="space-y-1.5">
                       {m.actions?.map((a, i) => (
-                        <li key={i}>{a.description}</li>
+                        <li key={i} className="space-y-1">
+                          <div className="flex items-start gap-1">
+                            <span>•</span>
+                            <span>{a.description}</span>
+                          </div>
+                          {a.subjectOptions && (
+                            <select
+                              value={a.chosenSubjectId || ''}
+                              onChange={(e) => setActionSubjectChoice(m.id, i, e.target.value)}
+                              className="ml-3 px-2 py-1 rounded border border-blue-300 text-xs bg-white"
+                            >
+                              <option value="">-- Chọn môn --</option>
+                              {a.subjectOptions.map((opt) => (
+                                <option key={opt.id} value={opt.id}>
+                                  {opt.name}
+                                </option>
+                              ))}
+                            </select>
+                          )}
+                        </li>
                       ))}
                     </ul>
                     {!m.resolved && (
                       <div className="flex gap-2 pt-1">
                         <button
                           onClick={() => handleConfirm(m.id)}
-                          className="flex-1 bg-blue-600 text-white font-medium rounded-lg py-2.5 min-h-[44px] text-sm hover:bg-blue-700 active:scale-95 transition-transform"
+                          disabled={needsSubjectChoice}
+                          className="flex-1 bg-blue-600 text-white font-medium rounded-lg py-2.5 min-h-[44px] text-sm hover:bg-blue-700 active:scale-95 transition-transform disabled:bg-gray-300"
                         >
                           OK
                         </button>
