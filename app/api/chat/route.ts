@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { getGeminiKeys, callGeminiRotate, isDailyLimit } from '@/lib/gemini';
 
 export const runtime = 'nodejs';
-export const maxDuration = 30;
+export const maxDuration = 60;
 
 type PageType = 'attendance' | 'evaluation' | 'equipment_check' | 'teaching_diary' | 'global';
 
@@ -33,6 +33,8 @@ interface ChatRequestBody {
   students?: StudentRef[];
   globalStudents?: GlobalStudentRef[];
   classSubjects?: ClassSubjects[]; // global only — môn giáo viên được phân công theo từng lớp
+  audioBase64?: string; // global only — 1 đoạn ghi âm ngắn thay cho message gõ tay
+  audioMimeType?: string;
 }
 
 interface ChatAction {
@@ -106,7 +108,7 @@ QUY TẮC:
 Chỉ điền field tương ứng với loại hành động đang cho phép, không điền thừa field khác.`;
 }
 
-function buildGlobalSystemPrompt(body: ChatRequestBody): string {
+function buildGlobalSystemPrompt(body: ChatRequestBody, isAudio: boolean): string {
   const { date, globalStudents = [], classSubjects = [] } = body;
 
   const roster = globalStudents
@@ -181,7 +183,13 @@ QUY TẮC KHÁC:
 - Nếu câu không liên quan gì tới học sinh, trả lời ngắn gọn trong "reply", "actions" rỗng.
 - CHỈ trả về JSON THUẦN, đúng schema sau, KHÔNG thêm chữ nào khác, KHÔNG dùng markdown code fence:
 {"reply":"...","actions":[{"type":"attendance|equipment_check|student_note|lesson_note|request_summary","student_id":"...","class_id":"...","subject_id":"...","description":"mô tả ngắn có tên/lớp + hành động","is_absent":true,"period":3,"forgot_equipment":true,"note":"...","content":"...","lesson_name":"...","lesson_content":"...","start_date":"2026-03-01","end_date":"2026-03-31","period_label":"Tháng 3/2026"}]}
-Chỉ điền field tương ứng với loại hành động, không điền thừa field khác. "class_id" luôn điền đúng theo danh sách lớp/học sinh ở trên. "student_id" chỉ cần cho attendance/equipment_check/student_note/request_summary — với "lesson_note" để "student_id":"".`;
+Chỉ điền field tương ứng với loại hành động, không điền thừa field khác. "class_id" luôn điền đúng theo danh sách lớp/học sinh ở trên. "student_id" chỉ cần cho attendance/equipment_check/student_note/request_summary — với "lesson_note" để "student_id":"".${
+    isAudio
+      ? `
+
+CHẾ ĐỘ GHI ÂM: Đầu vào lần này là 1 đoạn ghi âm ngắn (khoảng vài phút) trong lớp học, KHÔNG phải tin nhắn gõ tay. Hãy nghe kỹ và CHỈ đề xuất hành động khi nghe RÕ giáo viên nhắc cụ thể mã máy/tên học sinh kèm nhận xét/tình huống rõ ràng (khen, nhắc nhở, vắng, quên đồ, tên bài học...). Đoạn giảng bài/nói chuyện bình thường không nhắc học sinh cụ thể thì BỎ QUA, KHÔNG suy diễn hay bịa. Nếu cả đoạn không có gì đáng ghi, để "actions" rỗng và "reply" ngắn gọn kiểu "Không có nội dung đáng ghi trong đoạn này." — đây KHÔNG phải lỗi, là kết quả bình thường của phần lớn các đoạn ghi âm (giảng bài chiếm đa số thời gian).`
+      : ''
+  }`;
 }
 
 function buildDiarySystemPrompt(body: ChatRequestBody): string {
@@ -210,14 +218,15 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'invalid_body' }, { status: 400 });
   }
 
-  const { message, pageType } = body;
+  const { message, pageType, audioBase64, audioMimeType } = body;
+  const isGlobal = pageType === 'global';
+  const isAudio = isGlobal && !!audioBase64;
 
-  if (!message || !String(message).trim()) {
+  if (!isAudio && (!message || !String(message).trim())) {
     return NextResponse.json({ error: 'no_message' }, { status: 400 });
   }
 
   const isDiary = pageType === 'teaching_diary';
-  const isGlobal = pageType === 'global';
   if (isGlobal && (!Array.isArray(body.globalStudents) || body.globalStudents.length === 0)) {
     return NextResponse.json({ error: 'no_students' }, { status: 400 });
   }
@@ -233,12 +242,19 @@ export async function POST(request: Request) {
   const systemPrompt = isDiary
     ? buildDiarySystemPrompt(body)
     : isGlobal
-      ? buildGlobalSystemPrompt(body)
+      ? buildGlobalSystemPrompt(body, isAudio)
       : buildActionSystemPrompt(body);
+
+  const userParts = isAudio
+    ? [
+        { inlineData: { mimeType: audioMimeType || 'audio/webm', data: audioBase64 } },
+        { text: 'Đây là 1 đoạn ghi âm ngắn trong lớp học. Nghe và áp dụng đúng các quy tắc hệ thống ở trên.' },
+      ]
+    : [{ text: String(message) }];
 
   const payload = JSON.stringify({
     systemInstruction: { parts: [{ text: systemPrompt }] },
-    contents: [{ role: 'user', parts: [{ text: String(message) }] }],
+    contents: [{ role: 'user', parts: userParts }],
     generationConfig: { temperature: isDiary ? 0.4 : 0.1, maxOutputTokens: isDiary ? 1500 : isGlobal ? 3000 : 800 },
   });
 

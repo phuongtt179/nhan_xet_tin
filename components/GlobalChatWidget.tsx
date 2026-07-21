@@ -1,10 +1,34 @@
 'use client';
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
-import { MessageCircle, X, Save, Check } from 'lucide-react';
+import { MessageCircle, X, Save, Check, Mic, Square } from 'lucide-react';
 import { format, getWeek } from 'date-fns';
+
+// Mỗi đoạn ghi âm dài tối đa 3 phút rồi tự đóng file, gửi phân tích, và mở đoạn mới nối tiếp —
+// cần đóng/mở lại MediaRecorder (không dùng timeslice) vì chunk cắt giữa chừng không tự giải mã độc lập được.
+const RECORDING_SEGMENT_MS = 3 * 60 * 1000;
+const AUDIO_MIME_CANDIDATES = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus', 'audio/mp4'];
+
+function pickAudioMimeType(): string {
+  for (const candidate of AUDIO_MIME_CANDIDATES) {
+    if (typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported(candidate)) return candidate;
+  }
+  return '';
+}
+
+function blobToBase64(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const result = reader.result as string;
+      resolve(result.split(',')[1] || '');
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+}
 
 // Đồng bộ với app/teaching-diary/page.tsx — tuần học bắt đầu từ ISO week 38 (khoảng 15/9)
 const SCHOOL_YEAR_START_WEEK = 38;
@@ -88,6 +112,16 @@ export default function GlobalChatWidget() {
     Record<string, { competency: string; character: string; rating: string }>
   >({});
   const [summarySaved, setSummarySaved] = useState<Record<string, boolean>>({});
+  const [recording, setRecording] = useState(false);
+  const [recordingSeconds, setRecordingSeconds] = useState(0);
+
+  const mediaStreamRef = useRef<MediaStream | null>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const chunksRef = useRef<Blob[]>([]);
+  const stopRequestedRef = useRef(false);
+  const segmentTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const elapsedTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const audioMimeTypeRef = useRef<string>('');
 
   if (authLoading || !user) return null;
 
@@ -138,33 +172,24 @@ export default function GlobalChatWidget() {
     setMessages((prev) => [...prev, msg]);
   }
 
-  async function handleSend() {
-    const text = input.trim();
-    if (!text || sending) return;
+  function buildClassSubjects() {
+    const classIds = Array.from(new Set(roster.map((s) => s.class_id)));
+    return classIds.map((classId) => ({ class_id: classId, subjects: getMySubjectsForClass(classId) }));
+  }
 
-    appendMessage({ id: nextId(), kind: 'user', text });
-    setInput('');
-    setSending(true);
-
+  async function callGlobalChatApi(extraBody: Record<string, unknown>) {
     try {
-      const classIds = Array.from(new Set(roster.map((s) => s.class_id)));
-      const classSubjects = classIds.map((classId) => ({
-        class_id: classId,
-        subjects: getMySubjectsForClass(classId),
-      }));
-
       const res = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          message: text,
           pageType: 'global',
           date: format(new Date(), 'yyyy-MM-dd'),
           globalStudents: roster,
-          classSubjects,
+          classSubjects: buildClassSubjects(),
+          ...extraBody,
         }),
       });
-
       const data = await res.json();
 
       if (!res.ok) {
@@ -192,9 +217,97 @@ export default function GlobalChatWidget() {
       }
     } catch {
       appendMessage({ id: nextId(), kind: 'ai-text', text: 'Không kết nối được máy chủ.' });
+    }
+  }
+
+  async function handleSend() {
+    const text = input.trim();
+    if (!text || sending) return;
+
+    appendMessage({ id: nextId(), kind: 'user', text });
+    setInput('');
+    setSending(true);
+    try {
+      await callGlobalChatApi({ message: text });
     } finally {
       setSending(false);
     }
+  }
+
+  async function analyzeAudioSegment(blob: Blob) {
+    if (blob.size === 0) return;
+    const audioBase64 = await blobToBase64(blob);
+    appendMessage({ id: nextId(), kind: 'system', text: `🎙️ Đang phân tích đoạn ghi âm (${Math.round(blob.size / 1024)} KB)...` });
+    await callGlobalChatApi({ message: '[ghi âm]', audioBase64, audioMimeType: audioMimeTypeRef.current });
+  }
+
+  function startSegment() {
+    const stream = mediaStreamRef.current;
+    if (!stream) return;
+
+    chunksRef.current = [];
+    const recorder = new MediaRecorder(stream, audioMimeTypeRef.current ? { mimeType: audioMimeTypeRef.current } : undefined);
+    mediaRecorderRef.current = recorder;
+
+    recorder.ondataavailable = (e) => {
+      if (e.data.size > 0) chunksRef.current.push(e.data);
+    };
+
+    recorder.onstop = () => {
+      const blob = new Blob(chunksRef.current, { type: audioMimeTypeRef.current || 'audio/webm' });
+      chunksRef.current = [];
+      analyzeAudioSegment(blob);
+
+      if (!stopRequestedRef.current) {
+        startSegment();
+      } else {
+        mediaStreamRef.current?.getTracks().forEach((t) => t.stop());
+        mediaStreamRef.current = null;
+      }
+    };
+
+    recorder.start();
+    segmentTimerRef.current = setTimeout(() => {
+      if (mediaRecorderRef.current === recorder && recorder.state !== 'inactive') recorder.stop();
+    }, RECORDING_SEGMENT_MS);
+  }
+
+  async function startRecording() {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      mediaStreamRef.current = stream;
+      audioMimeTypeRef.current = pickAudioMimeType();
+      stopRequestedRef.current = false;
+      setRecording(true);
+      setRecordingSeconds(0);
+      elapsedTimerRef.current = setInterval(() => setRecordingSeconds((s) => s + 1), 1000);
+      startSegment();
+    } catch {
+      appendMessage({
+        id: nextId(),
+        kind: 'ai-text',
+        text: 'Không truy cập được micro — kiểm tra quyền micro cho trình duyệt rồi thử lại.',
+      });
+    }
+  }
+
+  function stopRecording() {
+    stopRequestedRef.current = true;
+    setRecording(false);
+    if (elapsedTimerRef.current) clearInterval(elapsedTimerRef.current);
+    if (segmentTimerRef.current) clearTimeout(segmentTimerRef.current);
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+      mediaRecorderRef.current.stop();
+    } else {
+      mediaStreamRef.current?.getTracks().forEach((t) => t.stop());
+      mediaStreamRef.current = null;
+    }
+  }
+
+  function formatElapsed(totalSeconds: number): string {
+    const m = Math.floor(totalSeconds / 60);
+    const s = totalSeconds % 60;
+    return `${m}:${s.toString().padStart(2, '0')}`;
   }
 
   async function writeAttendance(studentId: string, classId: string, isAbsent: boolean, period: number) {
@@ -505,6 +618,9 @@ export default function GlobalChatWidget() {
         aria-label="Mở trợ lý AI"
       >
         <MessageCircle size={26} />
+        {recording && (
+          <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-red-600 border-2 border-white animate-pulse" />
+        )}
       </button>
 
       {open && (
@@ -670,7 +786,24 @@ export default function GlobalChatWidget() {
             {sending && <div className="text-sm text-gray-400">Đang xử lý...</div>}
           </div>
 
+          {recording && (
+            <div className="flex items-center gap-2 px-3 py-2 bg-red-50 border-t border-red-200 text-sm text-red-700">
+              <span className="w-2.5 h-2.5 rounded-full bg-red-600 animate-pulse" />
+              Đang ghi âm... {formatElapsed(recordingSeconds)}
+            </div>
+          )}
+
           <div className="flex gap-2 p-3 border-t border-gray-200">
+            <button
+              onClick={recording ? stopRecording : startRecording}
+              disabled={!rosterLoaded || roster.length === 0}
+              title={recording ? 'Dừng ghi âm' : 'Bắt đầu ghi âm'}
+              className={`flex items-center justify-center rounded-lg px-3 min-h-[44px] min-w-[44px] disabled:bg-gray-300 ${
+                recording ? 'bg-red-600 text-white hover:bg-red-700' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+              }`}
+            >
+              {recording ? <Square size={18} /> : <Mic size={18} />}
+            </button>
             <input
               type="text"
               value={input}
