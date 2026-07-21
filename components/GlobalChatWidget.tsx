@@ -57,6 +57,7 @@ interface ChatAction {
   content?: string;
   lesson_name?: string;
   lesson_content?: string;
+  lesson_notes?: string;
   start_date?: string;
   end_date?: string;
   period_label?: string;
@@ -454,7 +455,8 @@ export default function GlobalChatWidget() {
     period: number,
     lessonName: string,
     lessonContent: string,
-    preferredSubjectId?: string
+    preferredSubjectId?: string,
+    lessonNotes?: string
   ) {
     const today = format(new Date(), 'yyyy-MM-dd');
     const subjectId = preferredSubjectId || (await resolveSubjectIdForClass(classId));
@@ -471,7 +473,7 @@ export default function GlobalChatWidget() {
     if (existing) {
       const { error } = await supabase
         .from('teaching_diary')
-        .update({ lesson_name: lessonName, content: lessonContent || null })
+        .update({ lesson_name: lessonName, content: lessonContent || null, notes: lessonNotes || null })
         .eq('id', existing.id);
       if (error) throw error;
     } else {
@@ -485,6 +487,7 @@ export default function GlobalChatWidget() {
           week_number: getSchoolWeek(new Date()),
           lesson_name: lessonName,
           content: lessonContent || null,
+          notes: lessonNotes || null,
         },
       ]);
       if (error) throw error;
@@ -560,7 +563,8 @@ export default function GlobalChatWidget() {
             action.period || 1,
             action.lesson_name || '',
             action.lesson_content || '',
-            preferredSubjectId
+            preferredSubjectId,
+            action.lesson_notes
           );
           results.push(`Lớp ${className}: đã lưu tên bài học "${action.lesson_name}" ✅`);
         } else if (action.type === 'request_summary') {
