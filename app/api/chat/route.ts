@@ -146,8 +146,8 @@ MÔN HỌC GIÁO VIÊN ĐƯỢC PHÂN CÔNG THEO TỪNG LỚP (dùng riêng cho 
 ${subjectsByClassText || '(không có dữ liệu phân công môn)'}
 
 BẠN CÓ THỂ ĐỀ XUẤT 5 LOẠI HÀNH ĐỘNG:
-1. "type":"attendance" — điểm danh. Cần "student_id", "is_absent" (true=vắng, false=có mặt) và "period" (số tiết 1-7). NẾU giáo viên không nói rõ tiết mấy, TUYỆT ĐỐI đừng tự đoán — để "actions" rỗng và "reply" hỏi lại "Tiết mấy ạ?".
-2. "type":"equipment_check" — quên đồ dùng. Cần "student_id", "forgot_equipment" (true/false), "period" (1-7, bắt buộc như trên — hỏi lại nếu thiếu), và tuỳ chọn "note" (mô tả món đồ quên).
+1. "type":"attendance" — điểm danh. Cần "student_id", "is_absent" (true=vắng, false=có mặt). "period" (số tiết 1-7) là TUỲ CHỌN — điền nếu giáo viên có nói rõ tiết mấy, KHÔNG hỏi lại nếu không nói, cứ đề xuất action bình thường (hệ thống tự xử lý phần tiết).
+2. "type":"equipment_check" — quên đồ dùng. Cần "student_id", "forgot_equipment" (true/false), tuỳ chọn "period" (1-7, như trên — không bắt buộc, không hỏi lại nếu thiếu) và tuỳ chọn "note" (mô tả món đồ quên).
 3. "type":"student_note" — MẶC ĐỊNH dùng loại này cho MỌI nhận xét khác không phải điểm danh/quên đồ, GẮN VỚI 1 HỌC SINH cụ thể: khen, nhắc nhở, nhận xét học tập/thái độ, quan sát hằng ngày... Cần "student_id" và "content" = viết lại câu nhận xét cho gọn, rõ, giữ đúng ý giáo viên nói, giọng văn tự nhiên như lời phê. KHÔNG cần "period".
 4. "type":"lesson_note" — lưu tên bài học đã dạy cho CẢ LỚP (không phải cho 1 học sinh). Cần "class_id" (chọn đúng theo danh sách lớp ở trên), "period" — BẮT BUỘC phải là số 1-7, KHÔNG BAO GIỜ được bỏ trống hay đoán bừa: nếu giáo viên không nói rõ tiết mấy, để "actions" rỗng và "reply" hỏi lại "Tiết mấy ạ?" (áp dụng đúng như quy tắc "period" của attendance/equipment_check ở trên) — TUYỆT ĐỐI không được vừa thiếu "period" vừa trả lời như đã lưu xong. Cần "lesson_name" (tên bài học ngắn gọn, suy ra từ câu giáo viên nói) và tuỳ chọn "lesson_content" (mô tả thêm nếu giáo viên có nói chi tiết). Dùng khi giáo viên nói kiểu "lớp X tiết Y dạy bài...", "hôm nay dạy...". KHÔNG cần "student_id" (bỏ trống "").
    XÁC ĐỊNH "subject_id" cho lesson_note theo thứ tự ưu tiên:
@@ -306,7 +306,7 @@ export async function POST(request: Request) {
         .filter((a): a is ChatAction => {
           if (!a) return false;
           if (a.type === 'attendance' || a.type === 'equipment_check') {
-            return rosterById.has(a.student_id) && isValidPeriod(a.period);
+            return rosterById.has(a.student_id);
           }
           if (a.type === 'student_note') {
             return rosterById.has(a.student_id) && !!a.content;
@@ -329,7 +329,8 @@ export async function POST(request: Request) {
             return { ...a, subject_id: subjectId };
           }
           const student = rosterById.get(a.student_id);
-          return student ? { ...a, class_id: student.class_id } : a;
+          const period = isValidPeriod(a.period) ? a.period : undefined;
+          return student ? { ...a, class_id: student.class_id, period } : a;
         });
       return NextResponse.json({ reply, actions });
     }
