@@ -32,7 +32,8 @@ import {
   PenLine,
   List,
   BookText,
-  GraduationCap
+  GraduationCap,
+  Sparkles
 } from 'lucide-react';
 
 // Menu cho tất cả người dùng
@@ -45,6 +46,7 @@ const commonNavItems = [
   { href: '/ai-summary', icon: BarChart2, label: 'Tổng hợp AI' },
   { href: '/attendance-summary', icon: CalendarCheck, label: 'Thống kê buổi học' },
   { href: '/equipment-summary', icon: Package, label: 'Thống kê đồ dùng' },
+  { href: '/tools', icon: Sparkles, label: 'Công cụ lớp học' },
 ];
 
 // Menu chỉ dành cho Admin
@@ -66,12 +68,13 @@ const adminNavItems = [
   { href: '/semester-summary', icon: GraduationCap, label: 'Tổng hợp cuối kì (cũ)' },
 ];
 
-// Mobile bottom navigation - only show 4 items
+// Mobile bottom navigation - only show 5 items
 const mobileNavItems = [
   { href: '/', icon: Home, label: 'Tổng quan' },
   { href: '/attendance', icon: ClipboardList, label: 'Điểm danh' },
   { href: '/equipment-check', icon: Backpack, label: 'Đồ dùng' },
   { href: '/ai-summary', icon: BarChart2, label: 'Tổng hợp AI' },
+  { href: '/tools', icon: Sparkles, label: 'Công cụ' },
 ];
 
 export default function Sidebar() {
@@ -214,7 +217,7 @@ export default function Sidebar() {
 
       {/* Mobile Bottom Navigation */}
       <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-30 bg-white border-t border-gray-200 shadow-lg">
-        <div className="grid grid-cols-4 gap-1">
+        <div className="grid grid-cols-5 gap-1">
           {mobileNavItems.map((item) => {
             const Icon = item.icon;
             const isActive = pathname === item.href;

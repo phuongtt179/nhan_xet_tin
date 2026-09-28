@@ -237,6 +237,24 @@ export interface StudentNote {
   subjects?: Subject;
 }
 
+// Điểm thưởng (Bộ công cụ lớp học — cộng/trừ khi học sinh phát biểu)
+export interface StudentPoint {
+  id: string;
+  student_id: string;
+  class_id: string;
+  subject_id: string | null;
+  user_id: string | null;
+  date: string;
+  period: number; // Tiết học (1-7)
+  points: number;
+  created_at: string;
+  updated_at: string;
+  // Relations
+  students?: Student;
+  classes?: Class;
+  subjects?: Subject;
+}
+
 // Nhật ký tiết dạy
 export interface TeachingDiary {
   id: string;
