@@ -1,7 +1,6 @@
 'use client';
 
-import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
-import { supabase } from '@/lib/supabase';
+import { createContext, useContext, useEffect, useState, ReactNode, useCallback } from 'react';
 import { User, TeacherAssignment, Subject } from '@/lib/types';
 
 interface AuthContextType {
@@ -22,63 +21,54 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [assignments, setAssignments] = useState<TeacherAssignment[]>([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    // Kiểm tra session từ localStorage
-    const savedUser = localStorage.getItem('user');
-    if (savedUser) {
-      const userData = JSON.parse(savedUser);
-      setUser(userData);
-      loadAssignments(userData.id);
+  const loadMe = useCallback(async () => {
+    try {
+      const res = await fetch('/api/auth/me', { cache: 'no-store' });
+      const data = await res.json();
+      setUser(data.user ?? null);
+      setAssignments(data.assignments ?? []);
+    } catch (error) {
+      console.error('Error loading session:', error);
+      setUser(null);
+      setAssignments([]);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   }, []);
 
-  async function loadAssignments(userId: string) {
-    try {
-      const { data, error } = await supabase
-        .from('teacher_assignments')
-        .select(`
-          *,
-          classes (*),
-          subjects (*)
-        `)
-        .eq('user_id', userId);
-
-      if (error) throw error;
-      setAssignments(data || []);
-    } catch (error) {
-      console.error('Error loading assignments:', error);
-    }
-  }
+  useEffect(() => {
+    // Phiên đăng nhập được xác thực bởi server qua cookie httpOnly (không
+    // còn tin dữ liệu người dùng lưu trong localStorage).
+    loadMe();
+  }, [loadMe]);
 
   async function login(email: string, password: string) {
     try {
-      const { data, error } = await supabase
-        .from('users')
-        .select('*')
-        .eq('email', email)
-        .eq('password_hash', password)
-        .eq('is_active', true)
-        .single();
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+      });
+      const data = await res.json();
 
-      if (error || !data) {
-        return { success: false, error: 'Email hoặc mật khẩu không đúng' };
+      if (!res.ok) {
+        return { success: false, error: data.error || 'Đăng nhập thất bại' };
       }
 
-      setUser(data);
-      localStorage.setItem('user', JSON.stringify(data));
-      await loadAssignments(data.id);
-
+      await loadMe();
       return { success: true };
     } catch (error) {
       return { success: false, error: 'Có lỗi xảy ra khi đăng nhập' };
     }
   }
 
-  function logout() {
-    setUser(null);
-    setAssignments([]);
-    localStorage.removeItem('user');
+  async function logout() {
+    try {
+      await fetch('/api/auth/logout', { method: 'POST' });
+    } finally {
+      setUser(null);
+      setAssignments([]);
+    }
   }
 
   function getAssignedClassIds(subjectId?: string): string[] {
@@ -87,18 +77,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     let filtered = assignments;
     if (subjectId) {
-      filtered = assignments.filter(a => a.subject_id === subjectId);
+      filtered = assignments.filter((a) => a.subject_id === subjectId);
     }
-    return [...new Set(filtered.map(a => a.class_id))];
+    return [...new Set(filtered.map((a) => a.class_id))];
   }
 
   function getAssignedSubjects(): Subject[] {
     if (!user) return [];
     if (user.role === 'admin') return []; // Admin có quyền tất cả
 
-    // Get unique subjects from assignments
     const subjectsMap = new Map<string, Subject>();
-    assignments.forEach(a => {
+    assignments.forEach((a) => {
       if (a.subjects && !subjectsMap.has(a.subject_id)) {
         subjectsMap.set(a.subject_id, a.subjects);
       }
@@ -117,11 +106,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     getAssignedSubjects,
   };
 
-  return (
-    <AuthContext.Provider value={value}>
-      {children}
-    </AuthContext.Provider>
-  );
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
 export function useAuth() {

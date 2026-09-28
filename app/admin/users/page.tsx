@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { supabase } from '@/lib/supabase';
 import { User } from '@/lib/types';
 import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'next/navigation';
@@ -33,13 +32,10 @@ export default function UsersManagementPage() {
 
   async function loadUsers() {
     try {
-      const { data, error } = await supabase
-        .from('users')
-        .select('*')
-        .order('full_name');
-
-      if (error) throw error;
-      setUsers(data || []);
+      const res = await fetch('/api/admin/users', { cache: 'no-store' });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      setUsers(data.users || []);
     } catch (error) {
       console.error('Error loading users:', error);
     } finally {
@@ -52,38 +48,38 @@ export default function UsersManagementPage() {
 
     try {
       if (editingUser) {
-        // Update existing user
-        const updateData: any = {
+        // Update existing user — chỉ gửi password nếu giáo viên nhập mật khẩu mới
+        const updateData: Record<string, unknown> = {
           email: formData.email,
           full_name: formData.full_name,
           phone: formData.phone || null,
           role: formData.role,
         };
-
-        // Only update password if provided
         if (formData.password) {
-          updateData.password_hash = formData.password;
+          updateData.password = formData.password;
         }
 
-        const { error } = await supabase
-          .from('users')
-          .update(updateData)
-          .eq('id', editingUser.id);
-
-        if (error) throw error;
+        const res = await fetch(`/api/admin/users/${editingUser.id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(updateData),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error);
       } else {
-        // Create new user
-        const { error } = await supabase
-          .from('users')
-          .insert({
+        const res = await fetch('/api/admin/users', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
             email: formData.email,
-            password_hash: formData.password,
+            password: formData.password,
             full_name: formData.full_name,
             phone: formData.phone || null,
             role: formData.role,
-          });
-
-        if (error) throw error;
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error);
       }
 
       setShowModal(false);
@@ -98,12 +94,9 @@ export default function UsersManagementPage() {
     if (!confirm(`Bạn có chắc muốn xóa giáo viên "${user.full_name}"?`)) return;
 
     try {
-      const { error } = await supabase
-        .from('users')
-        .delete()
-        .eq('id', user.id);
-
-      if (error) throw error;
+      const res = await fetch(`/api/admin/users/${user.id}`, { method: 'DELETE' });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
       loadUsers();
     } catch (error: any) {
       alert(error.message || 'Có lỗi xảy ra khi xóa');

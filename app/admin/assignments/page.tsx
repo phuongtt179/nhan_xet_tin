@@ -46,13 +46,10 @@ export default function AssignmentsPage() {
 
   async function loadData() {
     try {
-      // Load users (include admin too)
-      const { data: usersData } = await supabase
-        .from('users')
-        .select('*')
-        .eq('is_active', true)
-        .order('full_name');
-      setUsers(usersData || []);
+      // Load users (include admin too) — qua API server, không query thẳng bảng users
+      const usersRes = await fetch('/api/admin/users', { cache: 'no-store' });
+      const usersJson = await usersRes.json();
+      setUsers((usersJson.users || []).filter((u: User) => u.is_active));
 
       // Load subjects
       const { data: subjectsData } = await supabase
@@ -127,13 +124,14 @@ export default function AssignmentsPage() {
       const subjectIds = [...new Set(assignmentsData.map(a => a.subject_id))];
 
       const [usersRes, classesRes, subjectsRes] = await Promise.all([
-        supabase.from('users').select('*').in('id', userIds),
+        fetch('/api/admin/users', { cache: 'no-store' }).then(r => r.json()),
         supabase.from('classes').select('*, grades(name)').in('id', classIds),
         supabase.from('subjects').select('*').in('id', subjectIds),
       ]);
 
       // Map data
-      const usersMap = new Map((usersRes.data || []).map(u => [u.id, u]));
+      const allUsers: User[] = usersRes.users || [];
+      const usersMap = new Map(allUsers.filter(u => userIds.includes(u.id)).map(u => [u.id, u]));
       const classesMap = new Map((classesRes.data || []).map(c => [c.id, c]));
       const subjectsMap = new Map((subjectsRes.data || []).map(s => [s.id, s]));
 
